@@ -102,7 +102,6 @@ class Game:
         pygame.display.set_caption(Config.TITLE)
         pygame.font.init()
 
-        logo = pygame.image.load("resources/images/logo.png").convert_alpha()
         phone_icons = [pygame.image.load("resources/images/phone" + str(phone_index) + "_small.png").convert_alpha() for phone_index in range(4)]
         phone_icons_active = [pygame.image.load("resources/images/phone" + str(phone_index) + "_small_active.png").convert_alpha() for phone_index in range(4)]
         screens = [pygame.Surface((320, 240)) for _ in range(4)]
@@ -209,30 +208,23 @@ class Game:
             for i in range(4):
                 display.blit(screens[i], self.positions[i])
 
-            # Quem está sem jogador e o que a fila vai dizendo — lido antes do
-            # logo porque o logo depende disto (ver a seguir). O modo (web/sip)
-            # vem do bridge na própria mensagem "slots" (ver udp_input.py); sem
-            # bridge a correr, "mode" nem existe e o convite web com QR é a
-            # degradação certa.
+            # Quem está sem jogador e o que a fila vai dizendo. O modo
+            # (web/sip) vem do bridge na própria mensagem "slots" (ver
+            # udp_input.py); sem bridge a correr, "mode" nem existe e o
+            # convite web com QR é a degradação certa.
             slots = udp_input.get_slots()
             occupied = set(slots["occupied"]) if slots else set()
             queue_len = slots["queue_len"] if slots else 0
             mode = slots["mode"] if slots else "web"
 
-            if not global_state.any_playing:
-                # O logo de idle é uma imagem opaca de ecrã inteiro: tapava os
-                # quatro vídeos de attract, e por isso quem passava via um
-                # cartaz parado com QRs em cima em vez do jogo a mexer. Passa a
-                # sair só nos quadrantes que não têm convite — onde há QR,
-                # vê-se o vídeo por trás. Com os quatro lugares livres (o caso
-                # normal em idle) o logo não aparece de todo, que é o que se
-                # quer: o ecrã grande mostra jogo, e a marca está no próprio
-                # vídeo de attract.
-                for i in range(4):
-                    if i in occupied:
-                        display.blit(logo, self.positions[i],
-                                     pygame.Rect(*self.positions[i], 320, 240))
-            else:
+            # O cartaz "Hugo / Revenge of the 90s / Liga-te já e joga"
+            # (resources/images/logo.png) deixou de ser desenhado. É um véu
+            # cinzento a 50% sobre o ecrã inteiro — 80% da imagem está a alpha
+            # 128 — e por isso deslavava os quatro vídeos de attract em vez de
+            # os tapar de vez, o que dava um ar de ecrã avariado. O ecrã de
+            # espera passa a ser o próprio jogo a mexer, com os convites e o QR
+            # por cima. A marca já vem dentro dos vídeos.
+            if global_state.any_playing:
                 for i in range(4):
                     if phone_events[i].any_set():
                         display.blit(phone_icons_active[i], self.positions[i])
