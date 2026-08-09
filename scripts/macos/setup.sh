@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VENV_DIR="$REPO_ROOT/.venv"
 PYTHON_BIN="/opt/homebrew/bin/python3.13"
+REQUIREMENTS_LOCK="$SCRIPT_DIR/requirements-lock.txt"
 
 echo "== setup.sh: hugo-re (macOS arm64) =="
 
@@ -22,6 +23,18 @@ fi
 ARCH="$("$PYTHON_BIN" -c 'import platform; print(platform.machine())')"
 if [ "$ARCH" != "arm64" ]; then
   echo "ERRO: $PYTHON_BIN reporta arquitetura '$ARCH', esperava 'arm64'." >&2
+  exit 1
+fi
+
+if ! "$PYTHON_BIN" -c 'import _tkinter' >/dev/null 2>&1; then
+  echo "ERRO: o módulo _tkinter não está disponível neste Python." >&2
+  echo "Sem ele, o import de pyvidplayer2 bloqueia o arranque do jogo." >&2
+  echo "Instala-o com: brew install python-tk@3.13" >&2
+  exit 1
+fi
+
+if [ ! -f "$REQUIREMENTS_LOCK" ]; then
+  echo "ERRO: não encontrei o lock de dependências: $REQUIREMENTS_LOCK" >&2
   exit 1
 fi
 
@@ -42,10 +55,7 @@ fi
 echo "-- a atualizar pip --"
 "$VENV_DIR/bin/python3" -m pip install --upgrade pip -q
 
-echo "-- a instalar game/requirements.txt --"
-"$VENV_DIR/bin/pip" install -q -r "$REPO_ROOT/game/requirements.txt"
-
-echo "-- a instalar audio-server/requirements.txt --"
-"$VENV_DIR/bin/pip" install -q -r "$REPO_ROOT/audio-server/requirements.txt"
+echo "-- a instalar as versões validadas para o espetáculo --"
+"$VENV_DIR/bin/python3" -m pip install -q -r "$REQUIREMENTS_LOCK"
 
 echo "-- feito. Corre scripts/macos/check.sh para confirmar que está tudo ok. --"

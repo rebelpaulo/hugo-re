@@ -10,7 +10,13 @@ from tv_show.going_cave import GoingCave
 class InScoreboard(State):
     def __init__(self, context: GameData):
         super().__init__(context)
-        self.scoreboard = ScoreboardGame(context) if ScoreboardResources.available else None
+        if ScoreboardResources.available:
+            self.scoreboard = ScoreboardGame(context)
+        else:
+            # sem sprites saltamos a apresentação, mas o cálculo tem de correr na mesma
+            # senão a caverna parte de um forest_score em bruto (sem bónus/penalização)
+            context.forest_score = ScoreboardGame.compute_total_score(context)
+            self.scoreboard = None
 
     def process_events(self, phone_events: PhoneEvents):
         if phone_events.hungup:

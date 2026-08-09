@@ -5,17 +5,6 @@
 # NOTA sobre o cwd: game/resource.py e a maior parte do jogo carregam
 # recursos com caminhos relativos tipo "resources/images/...", o que só
 # resolve com cwd = game/. É esse o cwd usado aqui.
-#
-# Achado (documentado, não corrigido — está fora do WRITE SET):
-# game/tv_show/tv_show_resources.py:30-31 monta dois prefixos diferentes:
-#   prefix       = "resources/videos/{country}/"       -> resolve com cwd=game/
-#   audio_prefix = "audio_for_videos/{country}/"        -> NÃO resolve com cwd=game/
-# porque o áudio dos vídeos vive em game/resources/audio_for_videos/, e ao
-# audio_prefix falta o "resources/" que o prefix dos vídeos tem. Confirmado
-# empiricamente (ver scripts/macos/README.md). Isto é um bug do upstream em
-# game/, que não foi tocado por este ticket — o efeito prático é que o som
-# dos vídeos do tv_show (attract, initial, press_5, going_scylla, ending,
-# have_luck) não vai tocar, mesmo com cwd correto.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,6 +26,9 @@ if [ ! -d "$ASSETS" ]; then
   echo "Confirma o caminho da BigFile (ainda pode não ter sido descarregada)." >&2
   exit 1
 fi
+
+# O jogo muda de cwd abaixo; fixa primeiro qualquer caminho relativo recebido.
+ASSETS="$(cd "$ASSETS" && pwd -P)"
 
 if [ ! -x "$VENV_PY" ]; then
   echo "ERRO: não encontrei o .venv em $REPO_ROOT/.venv." >&2

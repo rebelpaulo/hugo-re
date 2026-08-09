@@ -1,0 +1,13 @@
+# Versões validadas para o espetáculo em macOS arm64 com Python 3.13.
+cffi==2.1.1
+glcontext==3.0.0
+moderngl==5.12.0
+numpy==2.5.1
+opencv-python==5.0.0.93
+pycparser==3.0
+pygame==2.6.1
+pyvidplayer2==0.9.36
+scipy==1.18.0
+sounddevice==0.5.5
+soundfile==0.14.0
+typing_extensions==4.16.0
