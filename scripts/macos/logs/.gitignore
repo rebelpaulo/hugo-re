@@ -1,0 +1,2 @@
+# Logs do supervisor.sh (têm timestamp no nome, um por sessão). Nunca versionar.
+*.log

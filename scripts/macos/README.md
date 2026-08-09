@@ -39,14 +39,67 @@ O check falha com código diferente de zero se faltar o Python correto, algum
 import, `ffmpeg`, a variável/caminho de assets ou os diretórios sentinela da
 BigFile. Os avisos escritos no stderr durante imports também ficam visíveis.
 
-Depois, em dois terminais separados:
+Depois, para correr o jogo e o bridge vigiados (recomendado — ver
+`supervisor.sh` abaixo):
 
 ```sh
-scripts/macos/run-audio.sh "$HUGO_ASSETS"
-scripts/macos/run-game.sh "$HUGO_ASSETS"
+scripts/macos/supervisor.sh "$HUGO_ASSETS"
 ```
 
-Ambos aceitam a BigFile pelo primeiro argumento ou por `$HUGO_ASSETS`.
+Ou, para correr as peças à mão em terminais separados (sem supervisão):
+
+```sh
+scripts/macos/run-game.sh "$HUGO_ASSETS"
+.venv/bin/python bridge/main.py
+```
+
+Todos os scripts que pedem a BigFile aceitam-na pelo primeiro argumento ou
+por `$HUGO_ASSETS`.
+
+Antes de abrir as portas, confirma tudo numa passagem:
+
+```sh
+scripts/macos/doctor.sh "$HUGO_ASSETS"
+```
+
+## supervisor.sh — vigia o jogo e o bridge
+
+```sh
+scripts/macos/supervisor.sh "$HUGO_ASSETS"
+```
+
+Arranca o jogo e o bridge, e reinicia sozinho quem morrer a meio do evento.
+Se o mesmo processo morrer 3 vezes em menos de 60 segundos, desiste — pára
+tudo (incluindo o outro processo) e escreve uma mensagem clara no log, em vez
+de reiniciar para sempre e mascarar um problema real de ambiente/config.
+
+- Log com timestamps em `scripts/macos/logs/supervisor-<data>.log` (um
+  ficheiro por sessão, nunca versionado — ver o `.gitignore` da pasta).
+- Ctrl-C (ou `kill` ao processo) pára tudo de forma limpa: primeiro SIGTERM,
+  e se o processo não sair em 5s (medido: acontece com o jogo/pygame),
+  escala para SIGKILL. Nunca deixa processos nem portas presos.
+- **Não** arranca o audio-server clássico (`run-audio.sh`) por omissão — a
+  partir do B2 o bridge, em `audio.mode: devices`, já escuta ele próprio as
+  portas 9001-9004 para encaminhar som para os telemóveis
+  (`bridge/audio_router.py`). Arrancar os dois ao mesmo tempo faz um dos dois
+  falhar a abrir a porta (testado nos dois sentidos — ver o comentário no
+  topo do próprio `supervisor.sh`). Passa `--audio-pa` só se `bridge/config.yaml`
+  estiver deliberadamente em `audio.mode: pa` (o modo de recurso, "se os
+  altifalantes dos telemóveis falharem").
+
+## doctor.sh — o que se corre às 20h antes de abrir as portas
+
+```sh
+scripts/macos/doctor.sh "$HUGO_ASSETS"
+```
+
+Uma passagem única por tudo o que interessa: `.venv`/Python, os 8 imports, a
+ausência do `cv2`, `ffmpeg`, a BigFile, os 12 clips PT, os sprites do
+scoreboard, as portas relevantes (8080, 9100, 9001-9004), se o bridge
+responde, se o jogo está vivo, e o IP do lobby. `[ok]`/`[FALHA]` em cada
+linha, sai != 0 se faltar algo essencial. Corre-se depois de o
+`supervisor.sh` já ter arrancado tudo — antes disso é normal ver `[FALHA]`
+em "bridge"/"jogo".
 
 ## Comportamento dos scripts
 
@@ -61,6 +114,14 @@ Ambos aceitam a BigFile pelo primeiro argumento ou por `$HUGO_ASSETS`.
 - O `audio_prefix` do tv show é enviado por UDP e resolvido pelo audio-server
   relativamente ao diretório fornecido por `--resources`; não deve receber um
   prefixo `resources/` adicional.
+- `setup.sh` instala o `.venv` com `--no-deps`, de propósito: sem isso o pip
+  puxava o `opencv-python` como dependência do `pyvidplayer2`, e esse pacote
+  traz o seu próprio `libSDL2` que colide com o do `pygame` (aviso `objc[...]
+  Class SDLApplication is implemented in both ...`, risco real de crash a
+  meio do jogo). Sem `cv2` instalado, o `pyvidplayer2` usa sozinho o
+  `FFMPEGReader` para ler os `.avi` — confirmado a decodificar os 6 clips PT
+  nos 4 quadrantes sem perda de funcionalidade. Ver o comentário no topo de
+  `requirements-lock.txt`. `doctor.sh` falha alto se o `cv2` reaparecer.
 
 ## Teclas dos quatro jogadores
 

@@ -61,13 +61,37 @@ if audio_vivo; then
   sleep 1
 fi
 
-echo "== 1/2: audio-server =="
-HUGO_ASSETS="$ASSETS" "$SCRIPT_DIR/run-audio.sh" "$ASSETS" &
-AUDIO_PID=$!
+# Com audio.mode: devices é o bridge que escuta nas portas 9001-9004 e manda
+# o som para o telemóvel de cada jogador. Nesse caso arrancar o audio-server
+# clássico aqui rouba-lhe as portas, e o bridge morre a seguir. Só o
+# arrancamos no modo "pa", em que o som sai mesmo pelas colunas.
+MODO_AUDIO="$(
+  "$REPO_DIR/.venv/bin/python" - "$REPO_DIR/bridge/config.yaml" <<'PY' 2>/dev/null || echo pa
+import sys, pathlib
+try:
+    import yaml
+    dados = yaml.safe_load(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")) or {}
+    print((dados.get("audio") or {}).get("mode", "pa"))
+except Exception:
+    print("pa")
+PY
+)"
+
+if [[ "$MODO_AUDIO" == "devices" ]]; then
+  echo "== 1/2: audio-server DISPENSADO =="
+  echo "   audio.mode = devices — o som vai para o telemóvel de cada jogador,"
+  echo "   e é o bridge que escuta nas portas do jogo. Arranca-o à parte:"
+  echo "   .venv/bin/python bridge/main.py"
+else
+  echo "== 1/2: audio-server (audio.mode = $MODO_AUDIO) =="
+  HUGO_ASSETS="$ASSETS" "$SCRIPT_DIR/run-audio.sh" "$ASSETS" &
+  AUDIO_PID=$!
+fi
 
 # O run-audio.sh só devolve prontidão depois de sondar as portas a sério.
 # Damos-lhe tempo, mas não esperamos para sempre.
 pronto=0
+if [[ -z "$AUDIO_PID" ]]; then pronto=1; fi
 for _ in $(seq 1 40); do
   if audio_vivo; then
     pronto=1

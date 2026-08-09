@@ -127,10 +127,26 @@ class AudioRouter:
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
         for player, port in enumerate(self.ports):
-            transport, _protocol = await loop.create_datagram_endpoint(
-                lambda player=player: _PortEndpoint(self, player),
-                local_addr=(self.host, port),
-            )
+            try:
+                transport, _protocol = await loop.create_datagram_endpoint(
+                    lambda player=player: _PortEndpoint(self, player),
+                    local_addr=(self.host, port),
+                )
+            except OSError as erro:
+                # Quase de certeza é o audio-server clássico a ocupar a mesma
+                # porta. Em modo "devices" é o bridge que fala com o jogo, e os
+                # dois não podem coexistir. Um traceback em bruto às 21h não
+                # ajuda ninguém — diz-se o que fazer.
+                await self.stop()
+                raise RuntimeError(
+                    f"Não consegui escutar em {self.host}:{port} ({erro}).\n"
+                    f"  Com audio.mode: {self.mode!r} é o bridge que recebe o áudio do\n"
+                    f"  jogo nas portas {self.ports}. O audio-server clássico usa as\n"
+                    f"  mesmas e não podem correr ao mesmo tempo.\n"
+                    f"  Ou fechas o audio-server (pkill -f '[a]udio_server\\.py'),\n"
+                    f"  ou mudas audio.mode para 'pa' no bridge/config.yaml se quiseres\n"
+                    f"  o som a sair pelas colunas em vez dos telemóveis."
+                ) from erro
             self._transports.append(transport)
         LOGGER.info(
             "AudioRouter a escutar em %s (jogadores 0..%d), modo=%s",
