@@ -14,6 +14,7 @@ Protocolo (JSON, um pacote UDP por evento):
 phone_events.py): offhook, hungup, press_0..press_9, press_star, press_pound.
 """
 import json
+import logging
 import socket
 import threading
 
@@ -24,6 +25,9 @@ from phone_events import PhoneEvents
 _VALID_EVENTS = set(PhoneEvents.__dataclass_fields__.keys())
 
 MAX_PACKET_SIZE = 4096
+MAX_PENDING_EVENTS = 1024
+
+LOGGER = logging.getLogger(__name__)
 
 
 class UdpInput:
@@ -32,6 +36,8 @@ class UdpInput:
         self.port = port
         self._lock = threading.Lock()
         self._pending = []  # lista de (player, event) por consumir
+        self._queue_limit_warned = False
+        self._packet_error_types = set()
         self.last_slots = None  # último {"occupied": [...], "queue_len": N} recebido
         self._sock = None
         self._thread = None
@@ -61,7 +67,16 @@ class UdpInput:
                 # Socket fechado ou outro erro de baixo nível — termina a thread.
                 return
 
-            self._handle_packet(data)
+            try:
+                self._handle_packet(data)
+            except Exception as exc:
+                # A receção é infraestrutura de palco: um pacote nunca pode
+                # impedir os seguintes. Regista só a primeira falha de cada
+                # tipo para não inundar o log se houver tráfego hostil.
+                error_type = type(exc)
+                if error_type not in self._packet_error_types:
+                    self._packet_error_types.add(error_type)
+                    LOGGER.exception("Pacote UDP ignorado após erro inesperado")
 
     def _handle_packet(self, data):
         try:
@@ -75,7 +90,19 @@ class UdpInput:
         if msg.get("type") == "slots":
             occupied = msg.get("occupied")
             queue_len = msg.get("queue_len")
-            if not isinstance(occupied, list) or not isinstance(queue_len, int):
+            if (
+                not isinstance(occupied, list)
+                or any(
+                    not isinstance(player, int)
+                    or isinstance(player, bool)
+                    or not 0 <= player <= 3
+                    for player in occupied
+                )
+                or len(set(occupied)) != len(occupied)
+                or not isinstance(queue_len, int)
+                or isinstance(queue_len, bool)
+                or queue_len < 0
+            ):
                 return
             with self._lock:
                 self.last_slots = {"occupied": occupied, "queue_len": queue_len}
@@ -83,13 +110,32 @@ class UdpInput:
 
         player = msg.get("player")
         event = msg.get("event")
-        if not isinstance(player, int) or not (0 <= player <= 3):
+        if (
+            not isinstance(player, int)
+            or isinstance(player, bool)
+            or not 0 <= player <= 3
+        ):
             return
-        if event not in _VALID_EVENTS:
+        if not isinstance(event, str) or event not in _VALID_EVENTS:
             return
 
         with self._lock:
+            if len(self._pending) >= MAX_PENDING_EVENTS:
+                if not self._queue_limit_warned:
+                    self._queue_limit_warned = True
+                    LOGGER.warning(
+                        "Fila UDP cheia (%d eventos); eventos novos serão ignorados",
+                        MAX_PENDING_EVENTS,
+                    )
+                return
             self._pending.append((player, event))
+
+    def get_slots(self):
+        """Devolve uma cópia do último {"occupied": [...], "queue_len": N}
+        recebido, ou None se ainda não chegou nenhuma mensagem 'slots' (por
+        exemplo, a bridge não está a correr)."""
+        with self._lock:
+            return dict(self.last_slots) if self.last_slots is not None else None
 
     def drain_into(self, phone_events):
         """Aplica todos os eventos pendentes à lista phone_events (4 elementos)

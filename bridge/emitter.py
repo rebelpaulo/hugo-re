@@ -38,7 +38,7 @@ class UdpEmitter:
         """Cria um emissor a partir da secção ``game`` do YAML."""
         with Path(path).open(encoding="utf-8") as config_file:
             config = yaml.safe_load(config_file) or {}
-        game = config.get("game", {})
+        game = config.get("game") or {}
         return cls(host=game.get("host", "127.0.0.1"), port=int(game.get("port", 9100)))
 
     def send_event(self, player: int, event: str) -> bool:

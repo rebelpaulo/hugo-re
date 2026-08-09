@@ -115,7 +115,7 @@ class SlotManager:
         """Cria o gestor a partir da secção ``bridge`` do YAML."""
         with Path(path).open(encoding="utf-8") as config_file:
             config = yaml.safe_load(config_file) or {}
-        bridge = config.get("bridge", {})
+        bridge = config.get("bridge") or {}
         return cls(
             emitter,
             slot_count=int(bridge.get("slots", 4)),
@@ -244,20 +244,36 @@ class SlotManager:
                     )
                 )
             else:
-                self._last_events[event_key] = now
-                self.emitter.send_event(session.player, event)
-                decisions.append(
-                    Decision(
-                        "forwarded",
-                        source_id=source_id,
-                        source_type=session.source_type,
-                        player=session.player,
-                        event=event,
+                if not self.emitter.send_event(session.player, event):
+                    LOGGER.error(
+                        "Não foi possível encaminhar %s do jogador %d",
+                        event,
+                        session.player,
                     )
-                )
-                if event == "hungup":
-                    self._release_active(session, "hungup", decisions)
-                    self._fill_available(now, decisions)
+                    decisions.append(
+                        Decision(
+                            "rejected",
+                            source_id=source_id,
+                            source_type=session.source_type,
+                            player=session.player,
+                            event=event,
+                            reason="emitter_failed",
+                        )
+                    )
+                else:
+                    self._last_events[event_key] = now
+                    decisions.append(
+                        Decision(
+                            "forwarded",
+                            source_id=source_id,
+                            source_type=session.source_type,
+                            player=session.player,
+                            event=event,
+                        )
+                    )
+                    if event == "hungup":
+                        self._release_active(session, "hungup", decisions)
+                        self._fill_available(now, decisions)
         return self._finish(decisions)
 
     def touch(self, source_id: str) -> list[Decision]:

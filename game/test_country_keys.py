@@ -12,9 +12,10 @@ import os
 import sys
 
 if len(sys.argv) < 2:
-    sys.argv.append("/Users/mac/Claude code/hugo-assets/gold/BigFile")
+    raise SystemExit(f"Uso: {sys.argv[0]} <caminho-para-BigFile>")
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame  # noqa: E402
 
@@ -23,8 +24,15 @@ pygame.display.set_mode((640, 480))
 
 from config import Config  # noqa: E402
 from game_data import GameData  # noqa: E402
+from tv_show import tv_show_resources as tv_show_resources_module  # noqa: E402
 from tv_show.tv_show_resources import TvShowResources  # noqa: E402
 from tv_show.tv_show_parent import TvShowParent  # noqa: E402
+
+# Os vídeos deste teste são abertos sem faixa de áudio. Força o backend
+# fictício do pygame para não depender de uma placa de som na máquina de CI.
+_Video = tv_show_resources_module.Video
+tv_show_resources_module.Video = lambda *args, **kwargs: _Video(
+    *args, use_pygame_audio=True, **kwargs)
 
 POSITIONS = [(0, 0), (320, 0), (0, 240), (320, 240)]
 
@@ -44,7 +52,10 @@ def reset_resources():
 
 def build_tv_shows(countries):
     """Réplica de game.py:98-100 (não alterado por este teste)."""
-    country_to_port = {"ar": 9001, "cl": 9002, "dn": 9003, "fr": 9004}
+    country_to_port = {
+        "ar": 9001, "cl": 9002, "dn": 9003, "fr": 9004,
+        "pt1": 9001, "pt2": 9002, "pt3": 9003, "pt4": 9004,
+    }
     tv_shows = [
         TvShowParent(GameData(country, country_to_port.get(country, 9001),
                                0, 0, 0, [], [], [], False, 0, 0))
@@ -95,6 +106,12 @@ def check_scenario(countries, label):
     print(f"OK [{label}]: 4 Video distintos, {len(pos_by_country)} posições distintas, "
           f"{len(valid_targets)} alvos de ataque válidos.")
 
+
+assert list(Config.COUNTRIES) == ["pt1", "pt2", "pt3", "pt4"], (
+    f"COUNTRIES devia conter as quatro chaves PT, contém {Config.COUNTRIES!r}")
+assert Config.COUNTRY_ASSETS == {
+    "pt1": "pt", "pt2": "pt", "pt3": "pt", "pt4": "pt",
+}, f"COUNTRY_ASSETS devia mapear as quatro chaves para 'pt': {Config.COUNTRY_ASSETS!r}"
 
 check_scenario(list(Config.COUNTRIES), "config atual (game/config.py)")
 check_scenario(["ar", "cl", "dn", "fr"], "países originais (upstream, sem COUNTRY_ASSETS)")
