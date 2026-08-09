@@ -192,11 +192,24 @@
     }
   }
 
+  // Acende o quadrante da pessoa no mapa do ecrã grande. A ordem das células
+  // no HTML é a mesma de `Game.positions` em game/game.py — jogador 0 em cima
+  // à esquerda, 1 em cima à direita, 2 em baixo à esquerda, 3 em baixo à
+  // direita. Índice fora de gama (ou ainda sem lugar) deixa as quatro
+  // apagadas, que é melhor do que apontar para o sítio errado.
+  function markQuadrant(player) {
+    var cells = document.querySelectorAll("#screen-grid .screen-cell");
+    for (var i = 0; i < cells.length; i++) {
+      cells[i].classList.toggle("mine", i === player);
+    }
+  }
+
   function onSlot(player, color) {
     clearInterval(turnCountdownTimer);
     var tag = document.getElementById("color-tag");
     tag.className = "color-tag c-" + color;
     document.getElementById("color-name").textContent = COLOR_NAME_PT[color] || color;
+    markQuadrant(player);
     document.getElementById("lcd-status").textContent = "PRONTO";
     document.getElementById("lcd-digits").innerHTML = "&nbsp;";
     // Repõe sempre o estado "por atender": um "slot" é sempre uma sessão
@@ -255,6 +268,9 @@
 
   function onReleased() {
     clearInterval(turnCountdownTimer);
+    // Apaga o quadrante: o lugar seguinte pode ser outro, e um mapa a apontar
+    // para o quadrante antigo manda a pessoa olhar para o sítio errado.
+    markQuadrant(-1);
     reconnectFresh();
   }
 
