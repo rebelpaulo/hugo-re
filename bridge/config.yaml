@@ -71,6 +71,10 @@ audio:
   # Pasta de assets do jogo (BigFile), onde os .wav originais vivem.
   assets_path: /Users/mac/Claude code/hugo-assets/gold/BigFile
 
+  # Segunda origem: vozes e loops dos vídeos do programa de TV. O bridge
+  # procura primeiro em assets_path e depois aqui, como o audio-server.
+  resources_path: /Users/mac/Claude code/hugo-re/game/resources
+
   # Cache dos ficheiros já convertidos para 16 bits/44.1kHz/mono — persiste
   # entre arranques, a conversão só acontece uma vez por ficheiro.
   cache_dir: bridge/audio_cache

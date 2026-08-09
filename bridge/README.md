@@ -255,16 +255,21 @@ mesma forma, para o `audio-server` local (colunas do computador), com um timeout
 (`pa_timeout_seconds`) para nunca deixar o jogo bloqueado mesmo que o `audio-server`
 esteja em baixo. É o que salva o evento se os altifalantes dos telemóveis não chegarem.
 
-**Conversão e cache**: `GET /audio/<recurso>` converte o `.wav` original (alguns são
-`pcm_u8` a 22050Hz — nem todo o browser descodifica isso) para 16 bits/mono/44.1kHz com
-`ffmpeg`, uma vez, para `audio.cache_dir`; pedidos seguintes servem directamente da
-cache, mesmo depois de reiniciar o bridge.
+**Conversão, duas origens e cache**: `GET /audio/<recurso>` procura primeiro em
+`audio.assets_path` (a BigFile) e depois em `audio.resources_path`
+(`game/resources`, onde vivem as vozes do programa de TV). Em ambas, o caminho resolvido
+tem de ficar dentro da respectiva raiz; travessia com `..` é recusada. O `.wav` original
+(alguns são `pcm_u8` a 22050Hz — nem todo o browser descodifica isso) é convertido para
+16 bits/mono/44.1kHz com `ffmpeg`, uma vez, para `audio.cache_dir`; pedidos seguintes
+servem directamente da cache, mesmo depois de reiniciar o bridge.
 
 **Manifesto de pré-carga** (`build_audio_manifest`): lê `game/forest/*.py` e
-`game/cave/*.py` (só leitura) à procura de `load_speak`/`load_sfx`, e devolve a lista de
-recursos que os dois minijogos implementados (Floresta e Caverna) realmente usam — para
-a webapp pré-carregar assim que o `AudioContext` desbloqueia (ver abaixo). Um recurso
-fora dessa lista continua a ser servido na mesma, só que carregado tardiamente em vez de
+`game/cave/*.py` (só leitura) à procura de `load_speak`/`load_sfx`. Também lê a AST de
+`game/tv_show/tv_show_resources.py` e de `game/config.py`, derivando os ficheiros de
+`audio_for_videos` para os países configurados sem manter uma segunda lista manual.
+Devolve assim o áudio que a Floresta, a Caverna e o programa de TV realmente usam, para a
+webapp pré-carregar assim que o `AudioContext` desbloqueia (ver abaixo). Um recurso fora
+dessa lista continua a ser servido na mesma, só que carregado tardiamente em vez de
 antecipado.
 
 **Do lado da webapp** (`webapp/game-audio.js`): o `AudioContext` só pode ser desbloqueado
@@ -272,6 +277,8 @@ por um gesto do utilizador (exigência do iOS). Não há um botão fixo "Jogar a
 o seletor de modo saiu do caminho normal — em vez disso, `phone.js` ouve o **primeiro**
 toque ou tecla em qualquer ponto da página (`pointerdown`/`keydown`, uma vez só) e é isso
 que chama `HugoAudio.start()`, desbloqueia o `AudioContext` e dispara o pré-carregamento.
+Qualquer falha de áudio é registada e engolida: enviar uma tecla, actualizar o LCD e
+animar o botão nunca dependem do `AudioContext`, da pré-carga ou da descodificação.
 Toca com `decodeAudioData` + `AudioBufferSourceNode`, com suporte a `loops` (repete um
 buffer novo a cada fim, já que a Web Audio não tem "repete N vezes" nativo) e a `stop`
 por `id`. Como o browser não expõe volume nem o interruptor de silêncio do telemóvel a

@@ -30,6 +30,7 @@ acrescentada a um contrato que já existia — nada do resto mudou.
 from __future__ import annotations
 
 import asyncio
+import ast
 import json
 import logging
 import re
@@ -218,12 +219,80 @@ class WebBridge:
 _RESOURCE_CALL_RE = re.compile(r'load_(speak|sfx)\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
 
 
+def _class_literal_values(path: Path, class_name: str) -> dict[str, object]:
+    """Lê atribuições literais de uma classe sem importar o jogo (pygame)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+        values: dict[str, object] = {}
+        for statement in node.body:
+            if (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+            ):
+                try:
+                    values[statement.targets[0].id] = ast.literal_eval(statement.value)
+                except (ValueError, TypeError):
+                    pass
+        return values
+    return {}
+
+
+def _tv_show_audio_resources(repo_root: Path) -> set[str]:
+    """Deriva as vozes do programa de TV do próprio código do jogo.
+
+    `TvShowResources` constrói cada caminho a partir de `audio_prefix` dentro
+    do ciclo por `Config.COUNTRIES`. Lemos a sua AST em vez de importar pygame
+    ou manter aqui uma segunda lista manual dos seis ficheiros.
+    """
+    config = _class_literal_values(repo_root / "game" / "config.py", "Config")
+    countries = config.get("COUNTRIES", [])
+    country_assets = config.get("COUNTRY_ASSETS", {})
+    if not isinstance(countries, list) or not isinstance(country_assets, dict):
+        return set()
+
+    tv_path = repo_root / "game" / "tv_show" / "tv_show_resources.py"
+    tree = ast.parse(tv_path.read_text(encoding="utf-8"), filename=str(tv_path))
+    filenames: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target, value = node.targets[0], node.value
+        if not (
+            isinstance(target, ast.Subscript)
+            and isinstance(target.value, ast.Attribute)
+            and isinstance(target.value.value, ast.Name)
+            and target.value.value.id == "TvShowResources"
+            and target.value.attr.startswith("audio_")
+            and isinstance(value, ast.BinOp)
+            and isinstance(value.op, ast.Add)
+            and isinstance(value.left, ast.Name)
+            and value.left.id == "audio_prefix"
+            and isinstance(value.right, ast.Constant)
+            and isinstance(value.right.value, str)
+        ):
+            continue
+        filenames.add(value.right.value)
+
+    resources: set[str] = set()
+    for country in countries:
+        if not isinstance(country, str):
+            continue
+        assets = country_assets.get(country, country)
+        if isinstance(assets, str):
+            resources.update(f"audio_for_videos/{assets}/{filename}" for filename in filenames)
+    return resources
+
+
 def build_audio_manifest(repo_root: Path) -> list[str]:
-    """Lista os recursos de áudio usados pelos dois minijogos implementados
-    (Floresta e Caverna), lendo `game/forest/*.py` e `game/cave/*.py` — só
-    leitura, nunca escreve em `game/`. Serve para a webapp pré-carregar; um
-    recurso fora desta lista continua servido em `/audio/<recurso>` na mesma,
-    só que carregado tardiamente em vez de antecipado."""
+    """Lista o áudio da Floresta, Caverna e programa de TV, só por leitura.
+
+    A lista do programa de TV vem de `TvShowResources` + `Config`, para os
+    países configurados, sem importar o jogo nem duplicar nomes de ficheiros.
+    Um recurso fora do manifesto continua servido, só carrega mais tarde.
+    """
     resources: set[str] = set()
     for sub in ("game/forest", "game/cave"):
         base = repo_root / sub
@@ -237,6 +306,7 @@ def build_audio_manifest(repo_root: Path) -> list[str]:
                 else:
                     sub_dir = "SFX" if game == "RopeOutroData" else "sfx"
                 resources.add(f"{game}/{sub_dir}/{filename}")
+    resources.update(_tv_show_audio_resources(repo_root))
     return sorted(resources)
 
 
@@ -282,24 +352,34 @@ async def audio_handler(request: web.Request) -> web.StreamResponse:
     """`GET /audio/<recurso>` — devolve o `.wav` já convertido, convertendo-o
     (e pondo em cache) na primeira vez que é pedido."""
     resource = request.match_info["resource"]
-    assets_path: Path = request.app["audio_assets_path"]
+    source_paths: tuple[Path, ...] = request.app["audio_source_paths"]
     cache_dir: Path = request.app["audio_cache_dir"]
+    source: Path | None = None
+    source_root: Path | None = None
 
-    source = (assets_path / resource).resolve()
-    try:
-        source.relative_to(assets_path)
-    except ValueError:
-        raise web.HTTPForbidden()
-    if not source.is_file():
+    # O mesmo recurso pode vir da BigFile ou de game/resources. A verificação
+    # de travessia vale de forma independente para cada raiz, antes de sequer
+    # considerar se o ficheiro existe nessa origem.
+    for root in source_paths:
+        candidate = (root / resource).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            raise web.HTTPForbidden()
+        if candidate.is_file():
+            source = candidate
+            source_root = root
+            break
+    if source is None or source_root is None:
         raise web.HTTPNotFound()
 
     # O destino da cache também tem de ser validado, não só a origem. Um
     # recurso com `..` pode resolver para uma origem legítima dentro de
-    # assets_path e ainda assim apontar o ficheiro convertido para fora da
+    # uma raiz e ainda assim apontar o ficheiro convertido para fora da
     # cache — seria escrita arbitrária a partir de um pedido HTTP.
     # Derivamos o caminho da cache a partir da origem já validada, não da
     # string que o cliente enviou.
-    cached = (cache_dir / source.relative_to(assets_path)).with_suffix(".wav")
+    cached = (cache_dir / source.relative_to(source_root)).with_suffix(".wav")
     try:
         cached.resolve().relative_to(cache_dir.resolve())
     except ValueError:
@@ -368,13 +448,17 @@ def create_app(
 
     if audio_config:
         assets_path = Path(audio_config["assets_path"]).resolve()
+        resources_value = audio_config.get("resources_path")
+        source_paths = [assets_path]
+        if resources_value:
+            source_paths.append(Path(resources_value).resolve())
         cache_dir = Path(audio_config.get("cache_dir", "bridge/audio_cache"))
         if not cache_dir.is_absolute():
             # Relativo à raiz do repositório, não ao cwd de quem arrancou o
             # processo — para dar sempre o mesmo sítio, corrido de onde for.
             cache_dir = REPO_ROOT / cache_dir
         cache_dir = cache_dir.resolve()
-        app["audio_assets_path"] = assets_path
+        app["audio_source_paths"] = tuple(source_paths)
         app["audio_cache_dir"] = cache_dir
         app["audio_manifest"] = build_audio_manifest(REPO_ROOT)
         app.router.add_get("/audio-manifest.json", audio_manifest_handler)

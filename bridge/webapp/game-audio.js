@@ -29,9 +29,24 @@
   function getContext() {
     if (!ctx) {
       var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) throw new Error("Web Audio API indisponível");
       ctx = new AC();
     }
     return ctx;
+  }
+
+  function reportFailure(label, err) {
+    console.warn("[audio] " + label + "; a aplicação continua utilizável.", err);
+  }
+
+  function resumeContext(audioCtx) {
+    if (audioCtx.state !== "suspended") return;
+    try {
+      var result = audioCtx.resume();
+      if (result && result.catch) result.catch(function (err) { reportFailure("não foi possível retomar o contexto", err); });
+    } catch (err) {
+      reportFailure("não foi possível retomar o contexto", err);
+    }
   }
 
   // ---------------- Arranque (chamado no primeiro gesto do utilizador) ----------------
@@ -40,11 +55,23 @@
     if (started) return;
     started = true;
 
-    var audioCtx = getContext();
-    if (audioCtx.state === "suspended") audioCtx.resume();
+    try {
+      resumeContext(getContext());
+    } catch (err) {
+      reportFailure("não foi possível iniciar o áudio", err);
+      return;
+    }
 
     showBanner("A preparar o som deste telemóvel…", 0);
-    fetch("/audio-manifest.json")
+    var manifestRequest;
+    try {
+      manifestRequest = fetch("/audio-manifest.json");
+    } catch (err) {
+      reportFailure("falha a pedir o manifesto", err);
+      hideBanner();
+      return;
+    }
+    manifestRequest
       .then(function (r) { return r.json(); })
       .then(function (list) {
         manifest = list || [];
@@ -69,7 +96,14 @@
     if (buffers[resource]) return Promise.resolve(buffers[resource]);
     if (pending[resource]) return pending[resource];
 
-    var promise = fetch("/audio/" + resource)
+    var request;
+    try {
+      request = fetch("/audio/" + resource);
+    } catch (err) {
+      reportFailure("recurso falhou: " + resource, err);
+      return Promise.resolve(null);
+    }
+    var promise = request
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.arrayBuffer();
@@ -82,7 +116,7 @@
         return buffer;
       })
       .catch(function (err) {
-        console.warn("[audio] recurso falhou: " + resource, err);
+        reportFailure("recurso falhou: " + resource, err);
         loadedCount += 1;
         updateBanner();
         return null;
@@ -138,22 +172,27 @@
   function scheduleSource(id, resource, buffer, loops, remaining) {
     var entry = playing[id];
     if (!entry) return; // foi parado entretanto
-    var audioCtx = getContext();
-    var source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = loops === -1;
-    source.connect(audioCtx.destination);
-    entry.source = source;
-    entry.remaining = remaining;
-    source.onended = function () {
-      if (!playing[id] || playing[id].source !== source) return; // já substituído/parado
-      if (loops !== -1 && remaining > 0) {
-        scheduleSource(id, resource, buffer, loops, remaining - 1);
-      } else {
-        delete playing[id];
-      }
-    };
-    source.start(0);
+    try {
+      var audioCtx = getContext();
+      var source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = loops === -1;
+      source.connect(audioCtx.destination);
+      entry.source = source;
+      entry.remaining = remaining;
+      source.onended = function () {
+        if (!playing[id] || playing[id].source !== source) return; // já substituído/parado
+        if (loops !== -1 && remaining > 0) {
+          scheduleSource(id, resource, buffer, loops, remaining - 1);
+        } else {
+          delete playing[id];
+        }
+      };
+      source.start(0);
+    } catch (err) {
+      delete playing[id];
+      reportFailure("não foi possível tocar " + resource, err);
+    }
   }
 
   function play(resource, loops, id) {
@@ -186,10 +225,14 @@
   // ---------------- Mensagens do servidor ----------------
 
   function handleMessage(msg) {
-    if (msg.action === "play") {
-      play(msg.resource, typeof msg.loops === "number" ? msg.loops : 0, msg.id);
-    } else if (msg.action === "stop") {
-      stop(msg.id);
+    try {
+      if (msg.action === "play") {
+        play(msg.resource, typeof msg.loops === "number" ? msg.loops : 0, msg.id);
+      } else if (msg.action === "stop") {
+        stop(msg.id);
+      }
+    } catch (err) {
+      reportFailure("mensagem do jogo falhou", err);
     }
   }
 

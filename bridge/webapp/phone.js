@@ -51,6 +51,16 @@
     if (navigator.vibrate) navigator.vibrate(ms);
   }
 
+  // O som é um extra: as políticas de autoplay, um AudioContext suspenso ou
+  // uma implementação incompleta do browser nunca podem impedir a entrada.
+  function safeAudio(label, action) {
+    try {
+      action();
+    } catch (e) {
+      console.warn("[audio] " + label + " falhou; a entrada continua utilizável.", e);
+    }
+  }
+
   // ---------------- Desbloqueio de áudio (exigência do browser) ----------------
   //
   // O AudioContext (game-audio.js) só pode ser desbloqueado dentro de um gesto
@@ -64,7 +74,9 @@
     if (audioUnlocked) return;
     audioUnlocked = true;
     requestFullscreenOnce();
-    if (window.HugoAudio) window.HugoAudio.start();
+    safeAudio("desbloqueio", function () {
+      if (window.HugoAudio) window.HugoAudio.start();
+    });
   }
   document.addEventListener("pointerdown", unlockAudioOnce, { once: true, passive: true });
   document.addEventListener("keydown", unlockAudioOnce, { once: true });
@@ -167,7 +179,9 @@
       case "pong":
         break; // heartbeat, nada a fazer
       case "audio":
-        if (window.HugoAudio) window.HugoAudio.handleMessage(msg);
+        safeAudio("mensagem do jogo", function () {
+          if (window.HugoAudio) window.HugoAudio.handleMessage(msg);
+        });
         break;
     }
   }
@@ -256,8 +270,7 @@
   document.querySelectorAll(".key").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var key = btn.getAttribute("data-key");
-      vibrate(30);
-      window.playDTMF(key);
+      // A tecla é a acção principal. Entra primeiro e nunca depende do som.
       send({ type: "press", key: key });
 
       btn.classList.add("pressed");
@@ -265,6 +278,11 @@
 
       digitsBuffer = (digitsBuffer + key).slice(-12);
       digitsEl.textContent = digitsBuffer;
+
+      vibrate(30);
+      safeAudio("tom DTMF", function () {
+        if (window.playDTMF) window.playDTMF(key);
+      });
     });
   });
 

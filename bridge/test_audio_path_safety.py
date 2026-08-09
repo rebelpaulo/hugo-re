@@ -24,7 +24,9 @@ from emitter import UdpEmitter
 from slot_manager import SlotManager
 
 ASSETS = Path("/Users/mac/Claude code/hugo-assets/gold/BigFile")
+RESOURCES = Path(__file__).resolve().parent.parent / "game" / "resources"
 RECURSO_BOM = "ForestData/speaks/005-01.wav"
+RECURSO_TV = "audio_for_videos/pt/attract_demo.wav"
 # `..` que dá a volta mas aterra num ficheiro que existe mesmo nos assets.
 RECURSO_TORTO = "ForestData/../ForestData/speaks/../speaks/005-02.wav"
 
@@ -44,6 +46,7 @@ async def main() -> int:
                 "mode": "devices",
                 "ports": [9601, 9602, 9603, 9604],
                 "assets_path": str(ASSETS),
+                "resources_path": str(RESOURCES),
                 "cache_dir": str(cache),
             },
         )
@@ -53,6 +56,11 @@ async def main() -> int:
 
         async with ClientSession() as session:
             resposta = await session.get(f"{base}/audio/{RECURSO_BOM}")
+            assert resposta.status == 200, resposta.status
+
+            # A segunda raiz tem exactamente a mesma validação antes de o
+            # seu conteúdo ser convertido/servido.
+            resposta = await session.get(f"{base}/audio/{RECURSO_TV}")
             assert resposta.status == 200, resposta.status
 
             # Origem válida, mas o destino da cache não pode escapar.
@@ -70,7 +78,7 @@ async def main() -> int:
         for ficheiro in cache.rglob("*.wav"):
             assert raiz in ficheiro.resolve().parents, f"fora da cache: {ficheiro}"
 
-        print("OK: nenhum recurso consegue escrever fora da cache de áudio")
+        print("OK: as duas raízes bloqueiam travessia e não escrevem fora da cache de áudio")
         await server.close()
         return 0
     finally:

@@ -8,6 +8,7 @@ de mocks de rede, tal como os outros testes do bridge. Usa ficheiros reais de
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import socket
 import tempfile
@@ -37,10 +38,12 @@ async def resposta_util(ws):
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ASSETS_PATH = REPO_ROOT.parent / "hugo-assets" / "gold" / "BigFile"
+RESOURCES_PATH = REPO_ROOT / "game" / "resources"
 
 assert ASSETS_PATH.is_dir(), (
     f"Assets do jogo não encontrados em {ASSETS_PATH} — ajusta ASSETS_PATH neste teste"
 )
+assert RESOURCES_PATH.is_dir(), f"Recursos do jogo não encontrados em {RESOURCES_PATH}"
 
 
 def free_port() -> int:
@@ -158,6 +161,7 @@ async def test_end_to_end_play_reaches_websocket() -> None:
             "mode": "devices",
             "ports": audio_ports,
             "assets_path": str(ASSETS_PATH),
+            "resources_path": str(RESOURCES_PATH),
             "cache_dir": cache_dir,
         }
         runner, _route, http_port = await start_server(manager, audio_config)
@@ -203,6 +207,7 @@ async def test_audio_http_serves_converted_pcm16() -> None:
             "mode": "devices",
             "ports": [free_port() for _ in range(4)],
             "assets_path": str(ASSETS_PATH),
+            "resources_path": str(RESOURCES_PATH),
             "cache_dir": cache_dir,
         }
         runner, _route, http_port = await start_server(manager, audio_config)
@@ -227,6 +232,20 @@ async def test_audio_http_serves_converted_pcm16() -> None:
                 assert resp2.status == 200
             assert cached_path.stat().st_mtime == mtime_before, "reconverteu em vez de reusar a cache"
             print("OK test_audio_http_cache_not_repeated")
+
+            # A segunda raiz é o áudio que acompanha os vídeos do programa
+            # de TV. A resposta HTTP, e não só o ficheiro na árvore, tem de
+            # ser um WAV que o browser consiga descodificar.
+            tv_resource = "audio_for_videos/pt/attract_demo.wav"
+            async with ClientSession() as session:
+                tv_resp = await session.get(f"http://127.0.0.1:{http_port}/audio/{tv_resource}")
+                assert tv_resp.status == 200, tv_resp.status
+                tv_body = await tv_resp.read()
+            with wave.open(io.BytesIO(tv_body), "rb") as wav_file:
+                assert wav_file.getsampwidth() == 2
+                assert wav_file.getframerate() == 44100
+                assert wav_file.getnchannels() == 1
+            print(f"OK test_audio_http_serves_tv_show_resource ({len(tv_body)} bytes, WAV válido)")
         finally:
             await runner.cleanup()
 
@@ -261,18 +280,23 @@ async def test_pa_mode_falls_back_without_blocking() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Prova: o manifesto de pré-carga cobre os dois minijogos implementados.
+# Prova: o manifesto de pré-carga cobre os minijogos e o programa de TV.
 # ---------------------------------------------------------------------------
 
-async def test_manifest_lists_forest_and_cave_resources() -> None:
+async def test_manifest_lists_all_game_audio_resources() -> None:
     manifest = build_audio_manifest(REPO_ROOT)
     assert any(r.startswith("ForestData/") for r in manifest), manifest
     assert any(r.startswith("RopeOutroData/") for r in manifest), manifest
+    tv_show_resources = [r for r in manifest if r.startswith("audio_for_videos/pt/")]
+    assert len(tv_show_resources) == 6, tv_show_resources
     assert len(manifest) == len(set(manifest)), "manifesto tem duplicados"
-    total_bytes = sum((ASSETS_PATH / r).stat().st_size for r in manifest)
+    total_bytes = sum(
+        ((RESOURCES_PATH if r.startswith("audio_for_videos/") else ASSETS_PATH) / r).stat().st_size
+        for r in manifest
+    )
     print(
-        f"OK test_manifest_lists_forest_and_cave_resources "
-        f"({len(manifest)} recursos, {total_bytes / 1e6:.2f} MB no original)"
+        f"OK test_manifest_lists_all_game_audio_resources "
+        f"({len(manifest)} recursos, 6 do programa de TV, {total_bytes / 1e6:.2f} MB no original)"
     )
 
 
@@ -282,7 +306,7 @@ async def main() -> None:
     await test_end_to_end_play_reaches_websocket()
     await test_audio_http_serves_converted_pcm16()
     await test_pa_mode_falls_back_without_blocking()
-    await test_manifest_lists_forest_and_cave_resources()
+    await test_manifest_lists_all_game_audio_resources()
     print("OK 6 grupos de testes")
 
 
