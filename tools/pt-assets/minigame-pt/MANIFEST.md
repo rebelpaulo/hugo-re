@@ -1,15 +1,15 @@
 # MANIFEST — dobragem PT dos minijogos (2026-08-09)
 
 Cada linha é um ficheiro do jogo que foi substituído (WAV instalado na BigFile).
-Origem: 16 gravações de estúdio (12 aproveitadas) mais 1 corte directo do
-episódio PT. As gravações não instaladas (4 de 16) estão descritas na secção
+Origem: 17 gravações de estúdio (13 aproveitadas) mais 1 corte directo do
+episódio PT. As gravações não instaladas (4 de 17) estão descritas na secção
 "Não instaladas" mais abaixo, com o motivo — os ficheiros do jogo
 correspondentes ficaram em espanhol.
 
 Formato de todos os WAV: `pcm_s16le`, mono, 44100 Hz — igual ao original,
 confirmado por `ffprobe` antes de converter.
 
-## Instaladas (13 falas: 12 das gravações + 1 do episódio)
+## Instaladas (14 falas: 13 das gravações + 1 do episódio)
 
 | ficheiro do jogo | gravação de origem (~/Downloads) | duração original | duração final | atempo | transcrição confirmada (whisper -l pt) |
 |---|---|---|---|---|---|
@@ -25,6 +25,7 @@ confirmado por `ffprobe` antes de converter.
 | `RopeOutroData/speak/002-06.wav` | `acho que pode ser perigoso.mp4` | 4.458s | 4.458s | não | «Hum, isto vai ser renhido!» — adaptação, não tradução literal (ver nota abaixo) |
 | `ForestData/speaks/005-05.wav` | `Vá lá! É a tua última oportunidade..mp4` | 4.050s | 4.050s | não | «Continua lentinho e vais de carrinho!» — adaptação (ver nota abaixo) |
 | `ForestData/speaks/005-03.wav` | `Não sejas lento Estou pronto para ir.mp4` | 3.669s | 3.668s | não | «Não seja esmolingão, joga com o coração!» — adaptação (ver nota abaixo) |
+| `ForestData/speaks/005-04.wav` | `ai ai ai.mp4` (fala nos últimos 2.5s de um ficheiro de 125s) | 3.048s | 3.047s | não | começa no gemido de dor («Aaaah!») seguido de uma queixa que o whisper não fixa (leituras entre «Como é que eu ando com a cabeça?» e variantes) — mas o arranque é inequívoco e o slot é o do «¡Ay ay ay ay! ¡Qué dolor!». **Este é o take que faltava:** MD5 distinto do de `«Olha os passarinhos!».mp4`, ao contrário do ficheiro homónimo entregue antes |
 | `ForestData/speaks/005-12.wav` | `Trolli-drit, trolli-drata.mp4` (fala nos últimos 4s de um ficheiro de 111s) | 4.450s | 4.352s | não | «[Está] tramado! Mas este jogo está acabado!» — o whisper devolve «É gramado», normal em sílabas sem sentido, mas o fecho bate certo com o espanhol («¡Este juego está a capur!») e rima como as outras adaptações. A ladainha «trolli-drit, trolli-drata, trolli-drut» do original não foi mantida |
 
 **Nota sobre as três adaptações (002-06, 005-05, 005-03).** Estas tinham sido
@@ -33,7 +34,7 @@ Paulo confirmou que o estúdio adaptou em vez de traduzir à letra — o espanho
 o português dizem coisas diferentes de propósito, com o mesmo sentido de cena.
 Instaladas por decisão dele. O que continua a mandar é só a duração.
 
-Dez das doze gravações foram recortadas por deteção de silêncio (`silencedetect`, vários limiares
+Onze das treze gravações foram recortadas por deteção de silêncio (`silencedetect`, vários limiares
 entre -30dB e -8dB conforme o ficheiro) para isolar a fala, com margem mínima
 natural. As 4 da caverna vinham em ficheiros de ~80–94s com muito silêncio à
 volta e, nos 5 ficheiros de 94s, uma frase solta e recorrente no fim
@@ -41,17 +42,17 @@ volta e, nos 5 ficheiros de 94s, uma frase solta e recorrente no fim
 do corte em todos os casos. As duas restantes (`005-05`, `005-03`) já vinham
 justas, sem silêncio a cortar, e entraram inteiras.
 
-## Não instaladas (4 de 16) — ficheiros do jogo continuam em espanhol
+## Não instaladas (4 de 17) — ficheiros do jogo continuam em espanhol
 
-Nenhuma das quatro ficou de fora por causa do texto: três são impossíveis de
-encaixar no tempo e uma é um ficheiro repetido.
+Nenhuma das quatro ficou de fora por causa do texto: duas são impossíveis de
+encaixar no tempo, uma é ambígua e uma foi substituída por um take melhor.
 
 | gravação (~/Downloads) | fala a que se destinava | motivo |
 |---|---|---|
 | `juro que voltarei.mp4` | `002-09.wav` (Hugo, «Juro que volto já!») | **duração.** O texto («E salvou a sua família!») é adaptação aceite pelo Paulo, como as outras três, mas a fala dura 3.86s e o `002-09` é o slot mais curto de toda a caverna: o WAV espanhol tem 1.83s e o lip-sync (`Syncs/002-09.oos`, 167 bytes) dá ~1.4s. Precisaria de `atempo` 2.7x. Só com regravação curta. |
 | `¡Oi!» (grunhido de impacto).mp4` | `005-07.wav` (grunhido de impacto, 0.41s) | **duração.** Conteúdo confirmado («Bimba!»), mas a palavra com as duas sílabas dura ~0.85–0.97s mesmo no núcleo mais alto de energia — não cabe em 0.41s nem com `atempo` no limite de 1.08x (daria ~0.79–0.90s). Precisa de uma interjeição de uma sílaba, tipo o "Oi!" original. |
 | `grito sem palavras.mp4` | ambíguo — pode ser `005-06`, `005-09`, `002-10` ou `002-11` (os 4 gritos que não são `005-07`) | confirmado por whisper que é só grito sem palavras («AAAAAAAI»), mas o nome do ficheiro não identifica a qual dos 4 gritos se destina, e não há forma segura de decidir sem confirmação do Paulo. Não adivinhado. Reportado, não instalado — e, como nota lateral, os gritos ficam bem com o original em qualquer língua (ver guião). |
-| `Ai ai ai ai! Que dor.mp4` | `005-04.wav` (Hugo, «Ai ai ai ai! Que dor!») | **ficheiro é cópia byte-a-byte (MD5 idêntico) de `«Olha os passarinhos!».mp4`** — o conteúdo real é "[olha os] passarinhos", não "ai ai ai que dor". Não existe gravação distinta para esta fala. Reportado, não instalado. |
+| `Ai ai ai ai! Que dor.mp4` | `005-04.wav` (Hugo, «Ai ai ai ai! Que dor!») | **ficheiro é cópia byte-a-byte (MD5 idêntico) de `«Olha os passarinhos!».mp4`** — o conteúdo real é "[olha os] passarinhos", não "ai ai ai que dor". ~~Não existe gravação distinta para esta fala.~~ **Resolvido:** entretanto chegou `ai ai ai.mp4`, com o take a sério (MD5 diferente), e é esse que está instalado. Este ficheiro fica sem uso. |
 
 ## Falas do jogo que continuam em espanhol (das 21 no total)
 
@@ -59,8 +60,6 @@ Floresta (`ForestData/speaks/`):
 - `005-02` — não faz parte das gravações entregues.
   (`005-01` também não fazia, mas foi resolvido pelo corte do episódio PT — ver
   tabela das instaladas.)
-- `005-04` — a gravação entregue é cópia byte-a-byte da de `005-11`; não existe
-  take próprio (ver tabela acima).
 - `005-06`, `005-09` — gritos, mantêm-se sempre o original (língua neutra).
 - `005-07` — gravação entregue mas não cabe no tempo exigido (ver tabela acima).
 
@@ -68,9 +67,9 @@ Caverna (`RopeOutroData/speak/`):
 - `002-09` — gravação entregue mas não cabe no tempo exigido (ver tabela acima).
 - `002-10`, `002-11` — gritos, mantêm-se sempre o original (língua neutra).
 
-Total: 8 das 21 falas continuam em espanhol — 1 não fornecida, 4 gritos (que
+Total: 7 das 21 falas continuam em espanhol — 1 não fornecida, 4 gritos (que
 ficam bem no original em qualquer língua), 2 que não cabem no tempo (`005-07`,
-`002-09`) e 1 sem gravação própria (`005-04`).
+`002-09`).
 
 ## O limite real de cada fala é o lip-sync, não o WAV
 
