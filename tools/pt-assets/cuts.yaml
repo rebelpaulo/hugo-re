@@ -19,6 +19,12 @@ clips:
   # com um salto ao reiniciar — escolhi o troço que fica mais neutro nas duas
   # pontas (começa a preto, acaba a meio do túnel, antes do logótipo "Hugo" e
   # antes de cortar para o apresentador). Sem fala; só música/efeitos.
+  # O build.sh aplica automaticamente um crossfade de loop (xfade, ~0,8 s,
+  # ver LOOP_CROSSFADE_FRAMES) a qualquer clip com loop: true — cruza o fim
+  # com o início para suavizar o salto ao repetir. O material das duas
+  # pontas é muito diferente (quase preto vs. túnel verde vivo), por isso o
+  # crossfade aproxima mas não elimina a transição; ver o relatório da
+  # tarefa para os números de YAVG antes/depois.
   - name: attract_demo
     start: "00:00:00.000"
     end:   "00:00:16.680"

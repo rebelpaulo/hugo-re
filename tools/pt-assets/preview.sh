@@ -6,8 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # se o venv ainda não existir. Podes forçar com PYTHON=... ./preview.sh
 PYTHON="${PYTHON:-$SCRIPT_DIR/../../.venv/bin/python}"
 [[ -x "$PYTHON" ]] || PYTHON="/opt/homebrew/bin/python3.13"
-FFMPEG="/usr/local/bin/ffmpeg"
-FFPROBE="/usr/local/bin/ffprobe"
+# Descobre o ffmpeg/ffprobe no PATH — funciona tanto com Homebrew Intel
+# (/usr/local/bin) como Apple Silicon (/opt/homebrew/bin). Força um caminho
+# com FFMPEG=/caminho/ffmpeg ou FFPROBE=/caminho/ffprobe.
+FFMPEG="${FFMPEG:-$(command -v ffmpeg 2>/dev/null || true)}"
+FFPROBE="${FFPROBE:-$(command -v ffprobe 2>/dev/null || true)}"
 CUTS_FILE="$SCRIPT_DIR/cuts.yaml"
 EXPECTED=(attract_demo hello_hello press_5 scylla_cave you_lost have_luck)
 
@@ -19,7 +22,10 @@ elif [[ $# -ne 0 ]]; then
 fi
 
 [[ -x "$PYTHON" ]] || { echo "Erro: não encontrei o Python ARM em $PYTHON." >&2; exit 1; }
-[[ -x "$FFMPEG" && -x "$FFPROBE" ]] || { echo "Erro: não encontrei ffmpeg/ffprobe em /usr/local/bin/." >&2; exit 1; }
+[[ -n "$FFMPEG" && -x "$FFMPEG" ]] || { echo "Erro: não encontrei o ffmpeg (define FFMPEG=/caminho/para/ffmpeg)." >&2; exit 1; }
+[[ -n "$FFPROBE" && -x "$FFPROBE" ]] || { echo "Erro: não encontrei o ffprobe (define FFPROBE=/caminho/para/ffprobe)." >&2; exit 1; }
+"$FFMPEG" -version >/dev/null 2>&1 || { echo "Erro: $FFMPEG não corre." >&2; exit 1; }
+"$FFPROBE" -version >/dev/null 2>&1 || { echo "Erro: $FFPROBE não corre." >&2; exit 1; }
 [[ -f "$CUTS_FILE" ]] || { echo "Erro: não encontrei $CUTS_FILE." >&2; exit 1; }
 if ! "$PYTHON" -c 'import yaml' >/dev/null 2>&1; then
   echo "Erro: falta o módulo PyYAML no Python ARM." >&2
@@ -29,24 +35,37 @@ fi
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hugo-pt-preview.XXXXXX")"
 trap 'rm -rf "$WORK_DIR"' EXIT
-PATHS_FILE="$WORK_DIR/paths.tsv"
 
-"$PYTHON" - "$CUTS_FILE" > "$PATHS_FILE" <<'PY'
+# Transporta os caminhos em JSON (achado 5) em vez de uma linha por campo —
+# um "output_video" com uma mudança de linha já não desloca os campos
+# seguintes. json.dumps escapa sempre \n dentro da string, por isso o JSON
+# em si nunca tem uma quebra de linha a meio, mesmo que o caminho tenha.
+PATHS_JSON="$("$PYTHON" - "$CUTS_FILE" <<'PY'
+import json
 import sys
 from pathlib import Path
+
 import yaml
 
 path = Path(sys.argv[1]).expanduser().resolve()
 data = yaml.safe_load(path.read_text(encoding="utf-8"))
-for key in ("output_video", "output_audio"):
-    value = data.get(key)
-    if not isinstance(value, str) or not value:
-        raise SystemExit(f"Erro: '{key}' não é um caminho válido em {path}.")
-    print(str((path.parent / value).resolve()))
-PY
 
-OUTPUT_VIDEO="$(sed -n '1p' "$PATHS_FILE")"
-OUTPUT_AUDIO="$(sed -n '2p' "$PATHS_FILE")"
+def clean_path(value, field):
+    if not isinstance(value, str) or not value.strip():
+        raise SystemExit(f"Erro: '{field}' não é um caminho válido em {path}.")
+    if "\t" in value or "\n" in value:
+        raise SystemExit(f"Erro: '{field}' não pode conter tabs nem mudanças de linha.")
+    return str((path.parent / value).resolve())
+
+print(json.dumps({
+    "output_video": clean_path(data.get("output_video"), "output_video"),
+    "output_audio": clean_path(data.get("output_audio"), "output_audio"),
+}))
+PY
+)"
+
+OUTPUT_VIDEO="$("$PYTHON" -c 'import json, sys; print(json.loads(sys.argv[1])["output_video"])' "$PATHS_JSON")"
+OUTPUT_AUDIO="$("$PYTHON" -c 'import json, sys; print(json.loads(sys.argv[1])["output_audio"])' "$PATHS_JSON")"
 PREVIEW_DIR="$SCRIPT_DIR/preview"
 mkdir -p "$PREVIEW_DIR"
 

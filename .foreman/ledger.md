@@ -137,6 +137,83 @@ independentes, esperam-se **4 loops verdadeiramente desfasados** e aí a cacofon
 Reavaliar depois do patch do B1. Mitigação preferida do PRD (attract a volume 0) continua
 válida.
 
+## Decisão de arquitetura de rede (2026-08-09) — altera um não-objetivo do PRD
+
+O PRD §1 diz "não expor nada à internet pública". **Revogado para a via QR**, com base em
+investigação com fontes. O Paulo decidiu: **túnel + local em paralelo**, e adiar o domínio
+(quick tunnel nos ensaios, domínio fixo antes do B5).
+
+### Porque é que só-LAN não serve para a via QR
+
+- Nenhum QR faz Wi-Fi + URL num scan. O formato `WIFI:S:...` é convenção do ZXing (iOS 11+,
+  Android 10+) e acaba na ligação à rede. São sempre ≥2 gestos.
+- **O telemóvel foge da rede.** Android sonda conectividade e aplica `avoid bad wifi`
+  (AOSP, `NETWORK_AVOID_BAD_WIFI`); iOS tem Wi-Fi Assist. Numa rede sem internet, o tráfego
+  é encaminhado para os dados móveis — e o "manter ligado" **não é durável**, o SO reavalia.
+  Mata o WebSocket a meio do jogo.
+- `.local` (mDNS) só resolve em Android 12+. Usar IP.
+- Captive portal: o CNA da Apple é limitado (900x572, sem barra de endereços, sem
+  persistência de cookies) — não serve para correr a webapp.
+- Um AP doméstico não chega para centenas (design de alta densidade: Cisco/Meraki, Netgear).
+
+### Porque é que o túnel resolve
+
+- Cloudflare Tunnel suporta WebSocket sem configuração extra (doc oficial), sem tecto de
+  largura de banda documentado, e ligação **de saída** — sem port forwarding.
+- Elimina o conteúdo misto de raiz: o telemóvel só fala com um host HTTPS público, nunca
+  com o IP privado. Também contorna o pedido de permissão de rede local do Chrome 142.
+- O público joga pelos **próprios dados móveis** — um scan, sem trocar de rede.
+
+### Ressalvas registadas
+
+- Quick tunnels (`trycloudflare.com`) dão URL **aleatório** a cada arranque — servem para
+  ensaios, não para o QR final. Hostname fixo exige domínio com DNS na Cloudflare (~10 €/ano).
+- **Não reiniciar o `cloudflared` durante o evento** — derruba as ligações WS abertas
+  (doc oficial).
+- ngrok descartado: tecto de 1 GB/mês no plano grátis. Estimativa de ~430 MB para 2 h com
+  50 jogadores; os ensaios comem da mesma quota.
+- Uplink do local passa a ser ponto único de falha para a via QR → **hotspot 4G/5G
+  dedicado como failover**, e a via local fica como plano B.
+- SIP não é afetado: os telefones falam com o Asterisk na LAN, sem internet.
+
+### Confirmado: nenhuma API da webapp exige HTTPS
+
+`navigator.vibrate()` (exige só ativação do utilizador), Web Audio, `requestFullscreen()` e
+`screen.orientation.lock()` **não** estão na lista de features restritas a contexto seguro
+do MDN. Só um Service Worker exigiria HTTPS — e não precisamos de um. Por isso o servidor
+local em `http://` é um plano B funcional, não um consolo.
+
+## Revisão do PR #1 — 17 achados (FAIL)
+
+CodeRabbit ficou rate-limited (41 min) e continuou rate-limited depois do toque → pela regra
+do CLAUDE.md global, a revisão passou para o Codex. Duas fontes: o conector do Codex no
+GitHub (3 achados) e uma revisão local adversarial (17 achados, superset).
+
+Distribuídos por três workers com write sets disjuntos:
+
+| Frente | Achados | Seat | Estado |
+|---|---|---|---|
+| F1 `game/` — pontuação ao saltar o scoreboard | 1 bloqueante | worker/sonnet | **DONE** — 2150=2150 e 1950=1950 provados |
+| F2 `tools/pt-assets/` — reprodutibilidade, loudness, escrita atómica, loop do attract, caminhos, ffmpeg | 1 bloqueante + 5 | worker/sonnet | a correr |
+| F3 `scripts/macos/` — portas, sinks, prontidão, bind 0.0.0.0, caminho relativo, check.sh, setup.sh, README falso | 7 maiores + 2 menores | worker/codex | a correr |
+
+Achado 17 (o ledger versionado no PR): **decisão de manter**. É o registo de decisões do
+projeto e sobrevive a compactação, que é o que o CLAUDE.md do workspace quer. Contém
+caminhos locais, mas o fork é privado.
+
+## Incidente de orquestração (2026-08-09) — write sets sobrepostos
+
+O worker F1 (`game/` scoreboard) viu `press_5.avi` e `hello_hello.wav` a 0 bytes, concluiu
+que o jogo os tinha truncado, e fez `git checkout --` nesses ficheiros. Não era verdade:
+eram ficheiros a meio de serem escritos pelo `ffmpeg` do worker F2, que corria em paralelo
+na mesma pasta. O F1 saiu do seu write set e reverteu trabalho do F2.
+
+Sem dano final — o F2 ainda estava na fase de build e reconstrói os 12 do zero com
+verificação no fim, portanto ganha a corrida. **Causa: eu dei ao F1 um write set
+(`game/**`) que se tocava com o do F2 (`game/resources/{videos,audio_for_videos}/pt/`).**
+Lição para o resto da run: write sets disjuntos ao nível da pasta, e proibição explícita de
+`git checkout` a workers.
+
 ## Riscos abertos
 
 | Risco | Onde | Nota |
