@@ -20,19 +20,30 @@ Uso:
 Protocolo (fixo, ver bridge/webapp/index.html e README do bridge):
     cliente -> servidor: hello, press, offhook, hangup, confirm, ping
     servidor -> cliente: config (logo na ligação), slot, queued, your_turn,
-                          released, pong
+                          released, pong, audio
+
+Áudio (bridge/webapp/game-audio.js): o bridge a sério serve /audio-manifest.json
+e /audio/<recurso> a partir de hugo-assets; este mock não tem esses ficheiros,
+por isso finge os dois — um manifesto com o attract_demo.wav e um WAV de
+silêncio válido gerado na hora — para a webapp poder pré-carregar e tocar a
+sério em testes manuais. `GET /debug/send-audio` manda uma mensagem "audio" a
+todos os clientes ligados, para simular o jogo a tomar conta do som (prova de
+que a intro local se cala) sem precisar do bridge a sério.
 """
 
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
 import random
 import struct
 import threading
 import time
+import urllib.parse
 import uuid
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -46,6 +57,25 @@ CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
 }
+
+# Só para o mock: o ficheiro a sério vem do bridge (hugo-assets), aqui é só
+# uma referência ao mesmo caminho para o manifesto/pré-carga bater certo.
+INTRO_RESOURCE = "audio_for_videos/pt/attract_demo.wav"
+
+
+def fake_wav_bytes(seconds=1.0, rate=8000):
+    """WAV válido (silêncio, 16 bits/mono) só para o decodeAudioData ter algo
+    a sério para decodificar — o mock não tem o áudio verdadeiro."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"\x00\x00" * int(rate * seconds))
+    return buf.getvalue()
+
+
+_FAKE_WAV = fake_wav_bytes()
 
 # ---------------- estado partilhado (jogo falso) ----------------
 
@@ -235,10 +265,61 @@ class Handler(BaseHTTPRequestHandler):
         pass  # silencioso; usar log() acima para os eventos que interessam
 
     def do_GET(self):
-        if self.path.startswith("/ws") and self.headers.get("Upgrade", "").lower() == "websocket":
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/ws") and self.headers.get("Upgrade", "").lower() == "websocket":
             self.handle_websocket()
             return
+        if path == "/audio-manifest.json":
+            self.send_json([INTRO_RESOURCE])
+            return
+        if path.startswith("/audio/"):
+            self.serve_fake_audio(path[len("/audio/"):])
+            return
+        if path == "/debug/send-audio":
+            self.debug_send_audio()
+            return
         self.serve_static()
+
+    def send_json(self, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def serve_fake_audio(self, resource):
+        # Só conhece o recurso da intro (é o único que os testes precisam);
+        # qualquer outro pedido dá 404, como faria o bridge a sério.
+        if resource != INTRO_RESOURCE:
+            self.send_error(404, "not found")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(len(_FAKE_WAV)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(_FAKE_WAV)
+
+    def debug_send_audio(self):
+        # Só para testes manuais/automatizados: finge o jogo a mandar áudio
+        # pela WebSocket, sem precisar do bridge a sério (ver cabeçalho do
+        # ficheiro). Parâmetros opcionais na query string.
+        qs = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(qs)
+        action = params.get("action", ["play"])[0]
+        resource = params.get("resource", [INTRO_RESOURCE])[0]
+        msg = {"type": "audio", "action": action, "id": 999}
+        if action == "play":
+            msg["resource"] = resource
+            msg["loops"] = -1
+        with lock:
+            targets = list(clients.values())
+        for info in targets:
+            info["send"](msg)
+        log("debug: mandou audio", msg, "a", len(targets), "cliente(s)")
+        self.send_json({"sent_to": len(targets), "message": msg})
 
     def serve_static(self):
         path = self.path.split("?", 1)[0]

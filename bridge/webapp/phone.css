@@ -275,21 +275,51 @@ html, body {
   letter-spacing: 1px;
 }
 
+/* O auscultador é o botão de começar (ver phone.js/attract.py no jogo) — quem
+   ainda não entrou tem de o identificar num relance, no escuro, sem
+   instruções. Por isso, enquanto não se está em chamada, é a peça com mais
+   presença do ecrã: largo, dourado, com halo a pulsar, e rótulo "ATENDER" —
+   o ícone sozinho é o que o cliente não reconheceu. Em chamada o mesmo botão
+   vira "DESLIGAR" e recolhe para um cantinho discreto, porque aí a atenção
+   passa a ser o teclado. */
 .handset {
-  width: 56px; height: 44px;
+  align-self: stretch;   /* ecrã ainda não entrou: largura toda, é a ação principal */
+  min-height: 64px;
   border: none;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #efeadb 0%, #d6d1bc 100%);
-  box-shadow: 0 3px 0 #8f8b78, inset 0 1px 0 rgba(255,255,255,0.6);
-  display: flex; align-items: center; justify-content: center;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #e8b93f 0%, #c4901f 100%);
+  box-shadow: 0 4px 0 #8a6412, 0 8px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  animation: handset-pulse 1.8s ease-in-out infinite;
+  transition: min-height 160ms ease-out, border-radius 160ms ease-out, background 160ms ease-out, box-shadow 160ms ease-out;
 }
+@keyframes handset-pulse {
+  0%, 100% { box-shadow: 0 4px 0 #8a6412, 0 8px 16px rgba(0,0,0,0.35), 0 0 0 rgba(232,185,63,0.6), inset 0 1px 0 rgba(255,255,255,0.4); }
+  50% { box-shadow: 0 4px 0 #8a6412, 0 8px 16px rgba(0,0,0,0.35), 0 0 22px 6px rgba(232,185,63,0.6), inset 0 1px 0 rgba(255,255,255,0.4); }
+}
+/* Em chamada: já não é preciso ocupar o ecrã — recolhe para um botão
+   discreto encostado ao canto direito, como o corpo de um telefone a
+   sério, e a atenção passa para o teclado por baixo. */
 .handset.off-hook {
-  background: linear-gradient(180deg, #b7c98a 0%, #93a862 100%);
-  box-shadow: 0 3px 0 #5e6d3a, inset 0 1px 0 rgba(255,255,255,0.4);
+  align-self: flex-end;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #d4634a 0%, #b13f28 100%);
+  box-shadow: 0 3px 0 #7a2416, inset 0 1px 0 rgba(255,255,255,0.35);
+  animation: none;
 }
 .handset:active { transform: translateY(2px); }
-.handset-icon { width: 34px; height: 18px; fill: #4a4a42; }
-.handset.off-hook .handset-icon { fill: #2e3a1a; }
+.handset-icon { width: 30px; height: 15px; fill: #4a3410; flex-shrink: 0; }
+.handset.off-hook .handset-icon { fill: #fff2ea; transform: rotate(135deg); }
+.handset-label {
+  font-size: 4.6vw;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #4a3410;
+  white-space: nowrap;
+}
+.handset.off-hook .handset-label { font-size: 3.6vw; color: #fff2ea; }
 
 .keypad {
   margin-top: auto;

@@ -11,6 +11,17 @@
 // Protocolo (novo tipo, não muda o resto):
 //   {"type":"audio","action":"play","resource":"...","loops":0,"id":7}
 //   {"type":"audio","action":"stop","id":7}
+//
+// Intro de attract local (silêncio entre a splash e o início do jogo): o
+// ciclo do jogo só manda o attract_demo.wav a quem entra a meio do loop de
+// 16,4s — quem chega antes disso ficava calado até à volta seguinte. Por
+// isso a cópia local começa a tocar sozinha assim que a splash sai
+// (requestIntro, chamado por phone.js) e cala-se logo que o jogo tome conta
+// do som: ou o jogador carrega no 5, ou chega QUALQUER mensagem "audio" do
+// servidor (mesmo que seja o mesmo ficheiro, na volta do loop) — o áudio
+// conduzido pelo jogo manda sempre, para nunca haver duas cópias
+// desfasadas ao mesmo tempo. Vive à parte de `playing{}` (ids do jogo) para
+// nunca colidir com um id real.
 
 (function () {
   "use strict";
@@ -25,6 +36,15 @@
 
   var bannerEl = null;
   var bannerTimer = null;
+
+  // ---------------- Intro de attract local ----------------
+
+  var INTRO_RESOURCE = "audio_for_videos/pt/attract_demo.wav";
+  // Ambiente, não é o jogo — mais baixa do que o som do jogo (que toca a
+  // 1.0, sem gain próprio, em scheduleSource). ~40% abaixo.
+  var INTRO_VOLUME = 0.6;
+  var introWantsToPlay = false;   // entre a saída da splash e o 5 / áudio do jogo
+  var introSource = null;         // BufferSourceNode ativo, ou null
 
   function getContext() {
     if (!ctx) {
@@ -113,6 +133,7 @@
         buffers[resource] = buffer;
         loadedCount += 1;
         updateBanner();
+        if (resource === INTRO_RESOURCE) tryStartIntro();
         return buffer;
       })
       .catch(function (err) {
@@ -222,10 +243,62 @@
     }
   }
 
+  // ---------------- Intro de attract local ----------------
+
+  // Chamado por phone.js quando a splash sai. Se o AudioContext ainda não
+  // estiver desbloqueado (sem gesto do utilizador ainda) ou o ficheiro ainda
+  // não tiver acabado de pré-carregar, fica à espera em silêncio — tryStartIntro
+  // volta a ser chamado quando `start()` desbloquear o contexto (unlockAudioOnce
+  // em phone.js) e quando o recurso concreto acabar de carregar (loadResource).
+  function requestIntro() {
+    introWantsToPlay = true;
+    tryStartIntro();
+  }
+
+  function tryStartIntro() {
+    if (!introWantsToPlay || introSource || !started) return;
+    var buffer = buffers[INTRO_RESOURCE];
+    if (!buffer) return; // ainda não pré-carregado — espera pelo hook em loadResource
+    try {
+      var audioCtx = getContext();
+      var gain = audioCtx.createGain();
+      gain.gain.value = INTRO_VOLUME;
+      gain.connect(audioCtx.destination);
+      var source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(gain);
+      source.onended = function () {
+        if (introSource === source) introSource = null;
+      };
+      introSource = source;
+      source.start(0);
+    } catch (err) {
+      introSource = null;
+      reportFailure("intro local falhou", err);
+    }
+  }
+
+  // Chamado ao carregar no 5 (phone.js) e sempre que chega qualquer mensagem
+  // "audio" do servidor (handleMessage, abaixo) — o áudio conduzido pelo jogo
+  // manda sempre, mesmo a meio de uma frase da intro.
+  function stopIntro() {
+    introWantsToPlay = false;
+    if (introSource) {
+      try { introSource.onended = null; introSource.stop(0); } catch (e) { /* já tinha acabado */ }
+      introSource = null;
+    }
+  }
+
   // ---------------- Mensagens do servidor ----------------
 
   function handleMessage(msg) {
     try {
+      // Qualquer mensagem de áudio do jogo cala a intro local, mesmo que a
+      // ação seja "stop" ou um recurso diferente — é o próprio jogo a tomar
+      // conta do som, e as duas cópias tocando juntas é a cacofonia que
+      // isto existe para evitar.
+      stopIntro();
       if (msg.action === "play") {
         play(msg.resource, typeof msg.loops === "number" ? msg.loops : 0, msg.id);
       } else if (msg.action === "stop") {
@@ -242,5 +315,17 @@
     return ctx ? ctx.state : "not-created";
   }
 
-  window.HugoAudio = { start: start, handleMessage: handleMessage, state: state };
+  // Estado real da intro local, sem adivinhar (mesmo espírito de state()).
+  function introState() {
+    return { wantsToPlay: introWantsToPlay, playing: !!introSource };
+  }
+
+  window.HugoAudio = {
+    start: start,
+    handleMessage: handleMessage,
+    state: state,
+    requestIntro: requestIntro,
+    stopIntro: stopIntro,
+    introState: introState
+  };
 })();

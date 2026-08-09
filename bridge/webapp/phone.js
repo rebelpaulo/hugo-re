@@ -267,6 +267,19 @@
   var digitsEl = document.getElementById("lcd-digits");
   var digitsBuffer = "";
 
+  // Mitigação do lado do cliente para um atalho de debug do PRÓPRIO JOGO:
+  // em game/tv_show/attract.py, enquanto ninguém descolgou o auscultador
+  // (offHook === false), o "4" e o "6" saltam para InScoreboard/InCave com
+  // pontuações fabricadas (1000 pontos, sacos inventados) — não é dados
+  // reais de ninguém, e num evento com centenas de pessoas a carregar em
+  // tudo isso acontece na primeira meia hora. Não podemos tocar em game/
+  // (não é write set desta mudança, é partilhado com o upstream), por isso
+  // a correção definitiva é lá — aqui só se evita ENVIAR essas duas teclas
+  // ao servidor antes de se entrar na chamada. A tecla continua a existir,
+  // a afundar, a vibrar e a tocar o tom (código abaixo, comum a todas as
+  // teclas) — só não sai para a rede, para não parecer avariada.
+  var BLOCKED_BEFORE_ENTRY = { "4": true, "6": true };
+
   document.querySelectorAll(".key").forEach(function (btn) {
     // `pointerdown` e não `click`: o click só dispara ao LARGAR o dedo, o que
     // num teclado se sente lento e faz duvidar que a tecla tenha registado.
@@ -276,7 +289,21 @@
       evento.preventDefault();
       var key = btn.getAttribute("data-key");
       // A tecla é a acção principal. Entra primeiro e nunca depende do som.
-      send({ type: "press", key: key });
+      // Excepto o 4 e o 6 antes de entrar (ver BLOCKED_BEFORE_ENTRY acima).
+      if (!offHook && BLOCKED_BEFORE_ENTRY[key]) {
+        console.warn("[phone] tecla " + key + " travada antes de entrar (atalho de debug do jogo) — ver BLOCKED_BEFORE_ENTRY em phone.js");
+      } else {
+        send({ type: "press", key: key });
+      }
+
+      // "5" é a tecla que inicia o jogo (ver cartão do jogo) — a partir
+      // daqui o áudio passa a ser todo conduzido pelo servidor, e a intro
+      // local cala-se para nunca tocar por cima do que o jogo mandar.
+      if (key === "5") {
+        safeAudio("parar intro attract", function () {
+          if (window.HugoAudio) window.HugoAudio.stopIntro();
+        });
+      }
 
       btn.classList.add("pressed");
       setTimeout(function () { btn.classList.remove("pressed"); }, 120);
@@ -293,10 +320,13 @@
 
   // ---------------- UI: auscultador ----------------
 
+  var handsetLabelEl = document.getElementById("handset-label");
   document.getElementById("handset-btn").addEventListener("click", function () {
     offHook = !offHook;
     vibrate(30);
     this.classList.toggle("off-hook", offHook);
+    this.setAttribute("aria-label", offHook ? "Desligar" : "Atender e começar a jogar");
+    handsetLabelEl.textContent = offHook ? "DESLIGAR" : "ATENDER";
     send({ type: offHook ? "offhook" : "hangup" });
     document.getElementById("lcd-status").textContent = offHook ? "EM CHAMADA" : "PRONTO";
   });
@@ -313,6 +343,13 @@
   setTimeout(function () {
     splashEl.classList.add("hide");
     setTimeout(function () { splashEl.hidden = true; }, SPLASH_FADE_MS);
+    // Acaba o silêncio até à próxima volta do loop de attract (16,4s): a
+    // intro começa a tocar localmente já aqui. Se o AudioContext ainda não
+    // estiver desbloqueado (sem gesto do utilizador), fica à espera em
+    // silêncio dentro do próprio game-audio.js — nunca um erro por isto.
+    safeAudio("intro attract", function () {
+      if (window.HugoAudio) window.HugoAudio.requestIntro();
+    });
   }, SPLASH_MS);
 
   // ---------------- Arranque ----------------
