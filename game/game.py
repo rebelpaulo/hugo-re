@@ -22,6 +22,7 @@ from tv_show.tv_show_resources import TvShowResources
 from tween import Tween
 from udp_input import UdpInput
 import global_state
+import invite_overlay
 
 class Game:
     positions = [
@@ -95,8 +96,12 @@ class Game:
         TvShowResources.init()
         Splat.init()
 
-        # Map countries to audio ports
-        country_to_port = {"ar": 9001, "cl": 9002, "dn": 9003, "fr": 9004}
+        # O áudio é separado por jogador para chegar ao respetivo telemóvel
+        # (webapp) ou auscultador (SIP), cada um através da sua própria porta.
+        country_to_port = {
+            "ar": 9001, "cl": 9002, "dn": 9003, "fr": 9004,
+            "pt1": 9001, "pt2": 9002, "pt3": 9003, "pt4": 9004,
+        }
         self.tv_shows = [TvShowParent(GameData(country, country_to_port.get(country, 9001), 0, 0, 0, [], [], [], False, 0, 0)) for country in Config.COUNTRIES]
         self.pos_by_country = {tv_show.country: self.positions[idx] for idx, tv_show in enumerate(self.tv_shows)}
 
@@ -195,6 +200,15 @@ class Game:
                         display.blit(Splat.orb, (orb_x, orb_y))
                         if dt > Config.EFFECT_DURATION_ORB:
                             self.effective_attacks.remove(attack)
+
+            # Convite com QR nos quadrantes sem jogador — por cima de tudo,
+            # incluindo o logo de idle, para nunca ficar escondido.
+            slots = udp_input.get_slots()
+            occupied = set(slots["occupied"]) if slots else set()
+            queue_len = slots["queue_len"] if slots else 0
+            for i in range(4):
+                if i not in occupied:
+                    invite_overlay.draw(display, self.positions[i], global_state.frame_time - self.start_time, queue_len)
 
             self.render_frame(ctx, display, program, render_object, global_state.any_playing)
             post_shader = time.time()

@@ -1,4 +1,3 @@
 PyYAML
-
-# Dependência futura do B2; não é necessária para o núcleo.
-# aiohttp
+aiohttp
+qrcode

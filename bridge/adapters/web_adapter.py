@@ -1,0 +1,352 @@
+"""Servidor HTTP + WebSocket do bridge.
+
+Serve a webapp (estática), o QR do lobby, os sons do jogo, e liga cada ligação
+WebSocket a uma sessão no `SlotManager`. Não sabe nada de SIP/ARI — isso é o B3.
+
+Contrato WebSocket (`/ws`), fixo com a webapp:
+
+    Cliente -> servidor:
+        {"type":"hello","mode":"web"}
+        {"type":"press","key":"5"}          key em 0-9, "*", "#"
+        {"type":"offhook"} / {"type":"hangup"} / {"type":"confirm"} / {"type":"ping"}
+
+    Servidor -> cliente:
+        {"type":"slot","player":2,"color":"red"}
+        {"type":"queued","position":3,"ahead":2}
+        {"type":"your_turn","player":2,"seconds":15}
+        {"type":"released"}
+        {"type":"pong"}
+        {"type":"audio","action":"play","resource":"...","loops":0,"id":7}
+        {"type":"audio","action":"stop","id":7}
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import time
+import uuid
+from pathlib import Path
+from typing import Callable
+
+from aiohttp import WSMsgType, web
+
+from audio_router import AudioRouter
+from slot_manager import Decision, SlotManager
+
+
+LOGGER = logging.getLogger("bridge.web_adapter")
+
+WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+QR_PATH = REPO_ROOT / "game" / "resources" / "images" / "qr_lobby.png"
+
+# Sem `ping` do cliente durante este tempo, a sessão perde o slot.
+HEARTBEAT_TIMEOUT_SECONDS = 15.0
+
+COLOR_BY_PLAYER = ["blue", "green", "red", "white"]
+
+KEY_TO_EVENT = {str(digit): f"press_{digit}" for digit in range(10)}
+KEY_TO_EVENT["*"] = "press_star"
+KEY_TO_EVENT["#"] = "press_pound"
+
+PLACEHOLDER_HTML = """<!doctype html>
+<html lang="pt">
+<head><meta charset="utf-8"><title>Hugo — a arrancar</title></head>
+<body style="font-family: sans-serif; text-align:center; margin-top:15vh;">
+<h1>A webapp está a ser construída</h1>
+<p>Volta a tentar dentro de instantes.</p>
+</body>
+</html>"""
+
+
+def decision_to_message(decision: Decision, clock: Callable[[], float]) -> dict | None:
+    """Traduz uma `Decision` do SlotManager para o contrato JSON da webapp.
+
+    Decisões sem mensagem própria (forwarded, ignored, touched, disconnected,
+    rejected, waiting, match_ended) devolvem ``None`` — não fazem parte do
+    contrato fixo do lado do cliente web.
+    """
+    if decision.kind == "assigned":
+        return {"type": "slot", "player": decision.player, "color": COLOR_BY_PLAYER[decision.player]}
+    if decision.kind == "queue_status":
+        return {"type": "queued", "position": decision.position, "ahead": decision.ahead}
+    if decision.kind == "offer":
+        seconds = max(0, round(decision.deadline - clock()))
+        return {"type": "your_turn", "player": decision.player, "seconds": seconds}
+    if decision.kind == "released":
+        return {"type": "released"}
+    return None
+
+
+class WebBridge:
+    """Liga sessões WebSocket ao SlotManager: source_id estável, heartbeat, encaminhamento."""
+
+    def __init__(self, manager: SlotManager, *, heartbeat_timeout: float = HEARTBEAT_TIMEOUT_SECONDS) -> None:
+        self.manager = manager
+        self.heartbeat_timeout = heartbeat_timeout
+        self._sockets: dict[str, web.WebSocketResponse] = {}
+
+    async def route(self, decisions: list[Decision]) -> None:
+        """Encaminha cada Decision para a sessão certa.
+
+        Uma oferta perdida sem confirmação (`offer_expired`) volta
+        automaticamente ao fim da fila — a webapp não tem forma própria de
+        pedir isso outra vez, e ficar parada não é uma opção em palco.
+        """
+        for decision in decisions:
+            if decision.kind == "offer_expired" and decision.source_type == "web":
+                await self.route(self.manager.request_slot(decision.source_id))
+                continue
+            message = decision_to_message(decision, self.manager.clock)
+            if message is None or decision.source_id is None:
+                continue
+            ws = self._sockets.get(decision.source_id)
+            if ws is None or ws.closed:
+                continue
+            try:
+                await ws.send_json(message)
+            except ConnectionResetError:
+                LOGGER.debug("Sessão %s fechou antes de receber %s", decision.source_id, message)
+
+    async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse(heartbeat=None)
+        await ws.prepare(request)
+
+        source_id = uuid.uuid4().hex
+        self._sockets[source_id] = ws
+        last_ping = time.monotonic()
+
+        try:
+            while True:
+                remaining = self.heartbeat_timeout - (time.monotonic() - last_ping)
+                if remaining <= 0:
+                    LOGGER.info("Sessão %s perdeu o heartbeat (sem ping)", source_id)
+                    break
+                try:
+                    msg = await asyncio.wait_for(ws.receive(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    LOGGER.info("Sessão %s perdeu o heartbeat (sem ping)", source_id)
+                    break
+
+                if msg.type == WSMsgType.TEXT:
+                    try:
+                        data = json.loads(msg.data)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    if not isinstance(data, dict):
+                        continue
+                    if data.get("type") == "ping":
+                        last_ping = time.monotonic()
+                    await self._handle_message(source_id, data)
+                elif msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED, WSMsgType.ERROR):
+                    break
+        finally:
+            del self._sockets[source_id]
+            await self.route(self.manager.disconnect(source_id))
+            if not ws.closed:
+                await ws.close()
+        return ws
+
+    async def _handle_message(self, source_id: str, data: dict) -> None:
+        mtype = data.get("type")
+        if mtype == "ping":
+            self.manager.touch(source_id)
+            ws = self._sockets.get(source_id)
+            if ws is not None and not ws.closed:
+                await ws.send_json({"type": "pong"})
+        elif mtype == "hello":
+            await self.route(self.manager.connect(source_id, "web"))
+        elif mtype == "press":
+            event = KEY_TO_EVENT.get(str(data.get("key")))
+            if event is not None:
+                await self.route(self.manager.handle_event(source_id, event))
+        elif mtype == "offhook":
+            await self.route(self.manager.handle_event(source_id, "offhook"))
+        elif mtype == "hangup":
+            await self.route(self.manager.handle_event(source_id, "hungup"))
+        elif mtype == "confirm":
+            await self.route(self.manager.confirm(source_id))
+        else:
+            LOGGER.debug("Sessão %s enviou mensagem desconhecida: %r", source_id, mtype)
+
+
+_RESOURCE_CALL_RE = re.compile(r'load_(speak|sfx)\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
+
+
+def build_audio_manifest(repo_root: Path) -> list[str]:
+    """Lista os recursos de áudio usados pelos dois minijogos implementados
+    (Floresta e Caverna), lendo `game/forest/*.py` e `game/cave/*.py` — só
+    leitura, nunca escreve em `game/`. Serve para a webapp pré-carregar; um
+    recurso fora desta lista continua servido em `/audio/<recurso>` na mesma,
+    só que carregado tardiamente em vez de antecipado."""
+    resources: set[str] = set()
+    for sub in ("game/forest", "game/cave"):
+        base = repo_root / sub
+        if not base.is_dir():
+            continue
+        for path in sorted(base.glob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            for kind, game, filename in _RESOURCE_CALL_RE.findall(text):
+                if kind == "speak":
+                    sub_dir = "speak" if game == "RopeOutroData" else "speaks"
+                else:
+                    sub_dir = "SFX" if game == "RopeOutroData" else "sfx"
+                resources.add(f"{game}/{sub_dir}/{filename}")
+    return sorted(resources)
+
+
+def _conversion_lock(app: web.Application, key: str) -> asyncio.Lock:
+    locks: dict[str, asyncio.Lock] = app.setdefault("audio_convert_locks", {})
+    lock = locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        locks[key] = lock
+    return lock
+
+
+async def _convert_to_pcm16(source: Path, dest: Path) -> None:
+    """Converte para PCM 16 bits, mono, 44.1kHz — formato que qualquer browser
+    descodifica com `decodeAudioData`. Os `pcm_u8` a 22kHz do jogo original são
+    o risco (nem todo o browser os aceita); convertem-se todos por igual."""
+    tmp = dest.with_suffix(".tmp.wav")
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source),
+        "-ac",
+        "1",
+        "-ar",
+        "44100",
+        "-c:a",
+        "pcm_s16le",
+        str(tmp),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0 or not tmp.is_file():
+        tmp.unlink(missing_ok=True)
+        raise web.HTTPInternalServerError(
+            text=f"Falha ao converter {source.name}: {stderr.decode(errors='replace')[-500:]}"
+        )
+    tmp.replace(dest)
+
+
+async def audio_handler(request: web.Request) -> web.StreamResponse:
+    """`GET /audio/<recurso>` — devolve o `.wav` já convertido, convertendo-o
+    (e pondo em cache) na primeira vez que é pedido."""
+    resource = request.match_info["resource"]
+    assets_path: Path = request.app["audio_assets_path"]
+    cache_dir: Path = request.app["audio_cache_dir"]
+
+    source = (assets_path / resource).resolve()
+    try:
+        source.relative_to(assets_path)
+    except ValueError:
+        raise web.HTTPForbidden()
+    if not source.is_file():
+        raise web.HTTPNotFound()
+
+    cached = (cache_dir / resource).with_suffix(".wav")
+    async with _conversion_lock(request.app, resource):
+        if not cached.is_file() or cached.stat().st_mtime < source.stat().st_mtime:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            await _convert_to_pcm16(source, cached)
+    return web.FileResponse(cached)
+
+
+async def audio_manifest_handler(request: web.Request) -> web.StreamResponse:
+    """`GET /audio-manifest.json` — lista de recursos para a webapp pré-carregar."""
+    return web.json_response(request.app["audio_manifest"])
+
+
+async def qr_handler(request: web.Request) -> web.StreamResponse:
+    if QR_PATH.is_file():
+        return web.FileResponse(QR_PATH)
+    raise web.HTTPNotFound(text="QR ainda não foi gerado")
+
+
+async def webapp_handler(request: web.Request) -> web.StreamResponse:
+    """Serve `bridge/webapp/` estaticamente; se a pasta ainda estiver vazia, mostra um aviso."""
+    tail = request.match_info.get("tail", "") or "index.html"
+    if WEBAPP_DIR.is_dir():
+        candidate = (WEBAPP_DIR / tail).resolve()
+        try:
+            candidate.relative_to(WEBAPP_DIR.resolve())
+        except ValueError:
+            raise web.HTTPForbidden()
+        if candidate.is_file():
+            return web.FileResponse(candidate)
+    if tail == "index.html":
+        return web.Response(text=PLACEHOLDER_HTML, content_type="text/html")
+    raise web.HTTPNotFound()
+
+
+def create_app(
+    manager: SlotManager,
+    *,
+    heartbeat_timeout: float = HEARTBEAT_TIMEOUT_SECONDS,
+    audio_config: dict | None = None,
+) -> tuple[web.Application, Callable[[list[Decision]], "asyncio.Future[None]"]]:
+    """Constrói a app aiohttp; devolve também `route` para o tick periódico do main.py usar.
+
+    `audio_config` é a secção `audio` do `config.yaml` (ver `bridge/README.md`).
+    Sem ela (`None`), o router de áudio simplesmente não arranca — usado pelos
+    testes existentes que não precisam de áudio.
+    """
+    bridge = WebBridge(manager, heartbeat_timeout=heartbeat_timeout)
+    app = web.Application()
+
+    if audio_config:
+        assets_path = Path(audio_config["assets_path"]).resolve()
+        cache_dir = Path(audio_config.get("cache_dir", "bridge/audio_cache"))
+        if not cache_dir.is_absolute():
+            # Relativo à raiz do repositório, não ao cwd de quem arrancou o
+            # processo — para dar sempre o mesmo sítio, corrido de onde for.
+            cache_dir = REPO_ROOT / cache_dir
+        cache_dir = cache_dir.resolve()
+        app["audio_assets_path"] = assets_path
+        app["audio_cache_dir"] = cache_dir
+        app["audio_manifest"] = build_audio_manifest(REPO_ROOT)
+        app.router.add_get("/audio-manifest.json", audio_manifest_handler)
+        app.router.add_get("/audio/{resource:.+}", audio_handler)
+
+        async def dispatch_audio(player: int, message: dict) -> bool:
+            """Encaminha uma mensagem de áudio para a sessão WebSocket do jogador.
+            Sem sessão ligada não é erro — só descarta (ver `audio_router.py`)."""
+            slots = manager._slots
+            if player < 0 or player >= len(slots):
+                return False
+            source_id = slots[player]
+            if not source_id:
+                return False
+            ws = bridge._sockets.get(source_id)
+            if ws is None or ws.closed:
+                return False
+            try:
+                await ws.send_json(message)
+                return True
+            except ConnectionResetError:
+                return False
+
+        audio_router = AudioRouter(
+            ports=list(audio_config.get("ports", [9001, 9002, 9003, 9004])),
+            dispatch=dispatch_audio,
+            mode=audio_config.get("mode", "devices"),
+            pa_host=audio_config.get("pa_host", "127.0.0.1"),
+            pa_ports=audio_config.get("pa_ports"),
+            pa_timeout=float(audio_config.get("pa_timeout_seconds", 0.4)),
+        )
+        app["audio_router"] = audio_router
+        app.on_startup.append(lambda _app: audio_router.start())
+        app.on_cleanup.append(lambda _app: audio_router.stop())
+
+    app.router.add_get("/ws", bridge.handle_websocket)
+    app.router.add_get("/qr.png", qr_handler)
+    # Catch-all por último: rotas específicas têm de ganhar todas as anteriores.
+    app.router.add_get("/{tail:.*}", webapp_handler)
+    return app, bridge.route

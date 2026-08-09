@@ -3,6 +3,13 @@ game:
   host: 127.0.0.1
   port: 9100
 
+# Servidor HTTP + WebSocket que serve a webapp. 0.0.0.0 é deliberado: os
+# telemóveis dos convidados têm de o alcançar pela Wi-Fi do evento. O emissor
+# UDP para o jogo (acima) continua sempre em 127.0.0.1, nunca aqui.
+web:
+  host: 0.0.0.0
+  port: 8080
+
 bridge:
   # Número de quadrantes/jogadores simultâneos do jogo.
   slots: 4
@@ -18,3 +25,28 @@ bridge:
 
   # Regra fechada: um telefone nunca expulsa quem já está a jogar.
   sip_preempt: false
+
+# Áudio do jogo: cada jogador ouve no seu telemóvel (via WebSocket) em vez das
+# colunas do computador. Ver bridge/audio_router.py e bridge/README.md.
+audio:
+  # "devices": som encaminhado para o telemóvel do jogador — o normal.
+  # "pa": interruptor de recurso — comportamento antigo, som pelas colunas do
+  # computador via audio-server/audio_server.py. Usar só se os altifalantes
+  # dos telemóveis falharem no dia do evento.
+  mode: devices
+
+  # Portas UDP onde o jogo já fala (game/game.py) — índice = jogador (0..3).
+  ports: [9001, 9002, 9003, 9004]
+
+  # Pasta de assets do jogo (BigFile), onde os .wav originais vivem.
+  assets_path: /Users/mac/Claude code/hugo-assets/gold/BigFile
+
+  # Cache dos ficheiros já convertidos para 16 bits/44.1kHz/mono — persiste
+  # entre arranques, a conversão só acontece uma vez por ficheiro.
+  cache_dir: bridge/audio_cache
+
+  # Só usado em modo "pa": onde está o audio-server local e as portas que ele
+  # escuta (diferentes das do jogo, para não colidirem com este router).
+  pa_host: 127.0.0.1
+  pa_ports: [9101, 9102, 9103, 9104]
+  pa_timeout_seconds: 0.4
