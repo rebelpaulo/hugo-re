@@ -23,6 +23,18 @@ from emitter import UdpEmitter
 from slot_manager import SlotManager
 
 
+async def resposta_util(ws):
+    """Lê a próxima mensagem, saltando o {"type":"config"} que o servidor
+    envia logo na ligação. O modo de entrada é definido pela produção antes
+    do evento, por isso chega antes de qualquer hello."""
+    while True:
+        raw = await ws.receive()
+        message = json.loads(raw.data)
+        if message.get("type") != "config":
+            return message
+
+
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ASSETS_PATH = REPO_ROOT.parent / "hugo-assets" / "gold" / "BigFile"
 
@@ -153,7 +165,7 @@ async def test_end_to_end_play_reaches_websocket() -> None:
             async with ClientSession() as session:
                 ws = await session.ws_connect(f"http://127.0.0.1:{http_port}/ws")
                 await ws.send_json({"type": "hello", "mode": "web"})
-                slot_msg = json.loads((await ws.receive()).data)
+                slot_msg = await resposta_util(ws)
                 assert slot_msg == {"type": "slot", "player": 0, "color": "blue"}, slot_msg
 
                 response, elapsed = await udp_request_async(
@@ -162,7 +174,7 @@ async def test_end_to_end_play_reaches_websocket() -> None:
                 )
                 assert "instance_id" in response, response
 
-                audio_msg = json.loads((await ws.receive()).data)
+                audio_msg = await resposta_util(ws)
                 assert audio_msg == {
                     "type": "audio",
                     "action": "play",

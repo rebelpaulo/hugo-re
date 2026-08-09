@@ -3,8 +3,10 @@
 // Recebe mensagens {"type":"audio",...} do WebSocket (ver phone.js) e toca-as
 // com a Web Audio API. Os sons são pré-carregados e descodificados a partir
 // do bridge (`/audio/<recurso>`, já convertidos para 16 bits/44.1kHz/mono —
-// ver bridge/adapters/web_adapter.py) assim que o jogador escolhe "jogar
-// aqui", porque é esse clique que desbloqueia o AudioContext no iOS.
+// ver bridge/adapters/web_adapter.py) assim que `start()` é chamado — o que
+// phone.js faz no PRIMEIRO gesto do utilizador na página (toque ou tecla),
+// porque é isso que desbloqueia o AudioContext no iOS (não há botão fixo
+// "jogar aqui" para isso desde que o seletor de modo foi removido).
 //
 // Protocolo (novo tipo, não muda o resto):
 //   {"type":"audio","action":"play","resource":"...","loops":0,"id":7}
@@ -191,5 +193,11 @@
     }
   }
 
-  window.HugoAudio = { start: start, handleMessage: handleMessage };
+  // Exposto para prova/depuração (mesmo espírito de window.__dtmfDebug em
+  // dtmf.js): estado real do AudioContext, sem adivinhar.
+  function state() {
+    return ctx ? ctx.state : "not-created";
+  }
+
+  window.HugoAudio = { start: start, handleMessage: handleMessage, state: state };
 })();

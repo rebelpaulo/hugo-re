@@ -11,6 +11,7 @@ Contrato WebSocket (`/ws`), fixo com a webapp:
         {"type":"offhook"} / {"type":"hangup"} / {"type":"confirm"} / {"type":"ping"}
 
     Servidor -> cliente:
+        {"type":"config","input_mode":"web"}        enviado logo na ligação, antes de tudo
         {"type":"slot","player":2,"color":"red"}
         {"type":"queued","position":3,"ahead":2}
         {"type":"your_turn","player":2,"seconds":15}
@@ -18,6 +19,11 @@ Contrato WebSocket (`/ws`), fixo com a webapp:
         {"type":"pong"}
         {"type":"audio","action":"play","resource":"...","loops":0,"id":7}
         {"type":"audio","action":"stop","id":7}
+
+`input_mode` é a definição de produção em `config.yaml` (web/sip/both — ver
+`bridge/README.md`), enviada assim que o WebSocket liga, para a webapp saber
+que ecrã mostrar sem ter de perguntar ao utilizador. Mensagem nova,
+acrescentada a um contrato que já existia — nada do resto mudou.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+import yaml
 from aiohttp import WSMsgType, web
 
 from audio_router import AudioRouter
@@ -42,6 +49,10 @@ LOGGER = logging.getLogger("bridge.web_adapter")
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 QR_PATH = REPO_ROOT / "game" / "resources" / "images" / "qr_lobby.png"
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+VALID_INPUT_MODES = ("web", "sip", "both")
+DEFAULT_INPUT_MODE = "web"
 
 # Sem `ping` do cliente durante este tempo, a sessão perde o slot.
 HEARTBEAT_TIMEOUT_SECONDS = 15.0
@@ -60,6 +71,25 @@ PLACEHOLDER_HTML = """<!doctype html>
 <p>Volta a tentar dentro de instantes.</p>
 </body>
 </html>"""
+
+
+def load_input_mode(config_path: Path = CONFIG_PATH) -> str:
+    """Lê `input_mode` de `config.yaml` (web/sip/both — ver bridge/README.md).
+
+    Ficheiro ausente, chave ausente ou valor inválido caem todos em "web" (o
+    modo mais restrito para o público — nunca deixa alguém cair sem querer
+    numa fila que não devia existir). Um valor inválido fica registado."""
+    try:
+        with config_path.open(encoding="utf-8") as config_file:
+            config = yaml.safe_load(config_file) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        LOGGER.warning("Não foi possível ler %s (%s) — a usar input_mode=%s", config_path, exc, DEFAULT_INPUT_MODE)
+        return DEFAULT_INPUT_MODE
+    mode = config.get("input_mode", DEFAULT_INPUT_MODE)
+    if mode not in VALID_INPUT_MODES:
+        LOGGER.warning("input_mode=%r inválido em %s — a usar %s", mode, config_path, DEFAULT_INPUT_MODE)
+        return DEFAULT_INPUT_MODE
+    return mode
 
 
 def decision_to_message(decision: Decision, clock: Callable[[], float]) -> dict | None:
@@ -84,9 +114,16 @@ def decision_to_message(decision: Decision, clock: Callable[[], float]) -> dict 
 class WebBridge:
     """Liga sessões WebSocket ao SlotManager: source_id estável, heartbeat, encaminhamento."""
 
-    def __init__(self, manager: SlotManager, *, heartbeat_timeout: float = HEARTBEAT_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        manager: SlotManager,
+        *,
+        heartbeat_timeout: float = HEARTBEAT_TIMEOUT_SECONDS,
+        input_mode: str = DEFAULT_INPUT_MODE,
+    ) -> None:
         self.manager = manager
         self.heartbeat_timeout = heartbeat_timeout
+        self.input_mode = input_mode
         self._sockets: dict[str, web.WebSocketResponse] = {}
 
     async def route(self, decisions: list[Decision]) -> None:
@@ -118,6 +155,10 @@ class WebBridge:
         source_id = uuid.uuid4().hex
         self._sockets[source_id] = ws
         last_ping = time.monotonic()
+
+        # Logo na ligação, antes de qualquer "hello": a webapp precisa disto
+        # para saber que ecrã mostrar sem ter de perguntar ao utilizador.
+        await ws.send_json({"type": "config", "input_mode": self.input_mode})
 
         try:
             while True:
@@ -291,14 +332,26 @@ def create_app(
     *,
     heartbeat_timeout: float = HEARTBEAT_TIMEOUT_SECONDS,
     audio_config: dict | None = None,
+    input_mode: str | None = None,
 ) -> tuple[web.Application, Callable[[list[Decision]], "asyncio.Future[None]"]]:
     """Constrói a app aiohttp; devolve também `route` para o tick periódico do main.py usar.
 
     `audio_config` é a secção `audio` do `config.yaml` (ver `bridge/README.md`).
     Sem ela (`None`), o router de áudio simplesmente não arranca — usado pelos
     testes existentes que não precisam de áudio.
+
+    `input_mode` é "web"/"sip"/"both" (ver `bridge/README.md`). Sem ele
+    (`None`, o caso normal — `main.py` não passa este argumento), é lido
+    directamente de `bridge/config.yaml`, tal como `audio_config` já é lido
+    por `main.py` antes de chegar aqui.
     """
-    bridge = WebBridge(manager, heartbeat_timeout=heartbeat_timeout)
+    if input_mode is None:
+        input_mode = load_input_mode()
+    elif input_mode not in VALID_INPUT_MODES:
+        LOGGER.warning("input_mode=%r inválido — a usar %s", input_mode, DEFAULT_INPUT_MODE)
+        input_mode = DEFAULT_INPUT_MODE
+
+    bridge = WebBridge(manager, heartbeat_timeout=heartbeat_timeout, input_mode=input_mode)
     app = web.Application()
 
     if audio_config:

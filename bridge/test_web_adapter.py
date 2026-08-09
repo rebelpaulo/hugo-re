@@ -18,6 +18,18 @@ from emitter import UdpEmitter
 from slot_manager import SlotManager
 
 
+async def resposta_util(ws):
+    """Lê a próxima mensagem, saltando o {"type":"config"} que o servidor
+    envia logo na ligação. O modo de entrada é definido pela produção antes
+    do evento, por isso chega antes de qualquer hello."""
+    while True:
+        raw = await ws.receive()
+        message = json.loads(raw.data)
+        if message.get("type") != "config":
+            return message
+
+
+
 def free_udp_listener() -> socket.socket:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("127.0.0.1", 0))
@@ -48,7 +60,7 @@ async def test_slots_and_queue_assignment() -> None:
             for _ in range(6):
                 ws = await session.ws_connect(f"http://127.0.0.1:{port}/ws")
                 await ws.send_json({"type": "hello", "mode": "web"})
-                message = json.loads((await ws.receive()).data)
+                message = await resposta_util(ws)
                 clients.append((ws, message))
 
             players = set()
@@ -78,7 +90,7 @@ async def test_press_reaches_game() -> None:
         async with ClientSession() as session:
             ws = await session.ws_connect(f"http://127.0.0.1:{port}/ws")
             await ws.send_json({"type": "hello", "mode": "web"})
-            slot_message = json.loads((await ws.receive()).data)
+            slot_message = await resposta_util(ws)
             assert slot_message["type"] == "slot", slot_message
             player = slot_message["player"]
 
@@ -115,7 +127,7 @@ async def test_heartbeat_loss_releases_slot() -> None:
         async with ClientSession() as session:
             ws = await session.ws_connect(f"http://127.0.0.1:{port}/ws")
             await ws.send_json({"type": "hello", "mode": "web"})
-            slot_message = json.loads((await ws.receive()).data)
+            slot_message = await resposta_util(ws)
             player = slot_message["player"]
             assert manager.occupied == [player]
 

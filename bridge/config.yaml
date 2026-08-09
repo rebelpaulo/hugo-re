@@ -1,3 +1,18 @@
+# Como é que as pessoas entram no jogo. Decisão da produção, ligada ANTES do
+# evento consoante o que está montado na sala — não é escolha do público, e a
+# webapp já não pergunta. Mudar aqui e reiniciar o bridge (bridge/main.py) é
+# tudo o que é preciso; não é preciso mexer em código.
+#
+#   web  — só webapp. Quem lê o QR cai direto no teclado ou na fila, sem
+#          nenhum ecrã de escolha pelo meio.
+#   sip  — só telefones físicos. Quem lê o QR vê apenas a sinalética (qual
+#          telefone usar e o que fazer) — não entra na fila nem ocupa lugar.
+#   both — as duas vias activas ao mesmo tempo. Quem lê o QR entra pela
+#          webapp (é o que o QR promete); a sinalética para quem preferir um
+#          telefone físico fica num link discreto dentro da webapp, não como
+#          pergunta à entrada.
+input_mode: web   # web | sip | both
+
 # Endereço UDP onde o jogo escuta. Manter em loopback na activação local.
 game:
   host: 127.0.0.1

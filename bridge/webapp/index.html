@@ -17,25 +17,9 @@
 
 <div class="stage">
 
-  <!-- 1. Seletor de modo -->
-  <section id="screen-mode" class="screen active">
-    <div class="brand">
-      <div class="brand-logo">HUGO</div>
-      <div class="brand-sub">Revenge of the 90s</div>
-    </div>
-    <div class="mode-choices">
-      <button class="mode-btn mode-btn-primary" id="btn-play-here" type="button">
-        <span class="mode-btn-title">Jogar aqui no telemóvel</span>
-        <span class="mode-btn-hint">Usa este ecrã como telefone</span>
-      </button>
-      <button class="mode-btn" id="btn-use-phone" type="button">
-        <span class="mode-btn-title">Vou usar um telefone</span>
-        <span class="mode-btn-hint">Só instruções — não entra na fila</span>
-      </button>
-    </div>
-  </section>
-
-  <!-- 2. Instruções para quem vai usar um telefone físico -->
+  <!-- 1. Instruções para quem vai usar um telefone físico. Só aparece se a
+       produção configurou input_mode=sip (direto) ou input_mode=both (via
+       link discreto no ecrã "a ligar"/"fila") — ver bridge/config.yaml. -->
   <section id="screen-signage" class="screen">
     <div class="signage-box">
       <h1 class="signage-title">Vais usar um telefone a sério?</h1>
@@ -50,26 +34,34 @@
     <button class="btn-back" id="btn-signage-back" type="button">← voltar</button>
   </section>
 
-  <!-- 3. A ligar -->
-  <section id="screen-connecting" class="screen">
+  <!-- 2. A ligar — primeiro ecrã que quem lê o QR vê em modo web/both. Sem
+       seletor: assim que o servidor confirma o modo, entra-se direto na
+       fila ou no teclado. -->
+  <section id="screen-connecting" class="screen active">
     <div class="lcd lcd-standalone">
       <div class="lcd-line lcd-blink">A LIGAR…</div>
     </div>
+    <button class="signage-link" id="signage-link" type="button" hidden>
+      Vou antes usar um telefone físico →
+    </button>
   </section>
 
-  <!-- 4. Fila -->
+  <!-- 3. Fila -->
   <section id="screen-queue" class="screen">
     <div class="lcd lcd-standalone">
       <div class="lcd-line">ESTÁS NA FILA</div>
       <div class="lcd-line lcd-big"><span id="queue-position">–</span>º LUGAR</div>
-      <div class="lcd-line"><span id="queue-ahead">–</span> pessoa(s) à frente</div>
+      <div class="lcd-line" id="queue-ahead-line">–</div>
     </div>
     <p class="queue-note">Não feches o ecrã — avisamos-te aqui assim que chegar a tua vez.</p>
     <div class="queue-dots"><span></span><span></span><span></span></div>
     <button class="btn-back" id="btn-queue-leave" type="button">← sair da fila</button>
+    <button class="signage-link" id="signage-link-queue" type="button" hidden>
+      Vou antes usar um telefone físico →
+    </button>
   </section>
 
-  <!-- 5. É a tua vez -->
+  <!-- 4. É a tua vez -->
   <section id="screen-turn" class="screen">
     <div class="lcd lcd-standalone">
       <div class="lcd-line lcd-blink">É A TUA VEZ!</div>
@@ -79,7 +71,7 @@
     <button class="btn-confirm" id="btn-confirm" type="button">CONFIRMAR</button>
   </section>
 
-  <!-- 6. Telefone / a jogar -->
+  <!-- 5. Telefone / a jogar -->
   <section id="screen-phone" class="screen">
     <div class="phone-body">
 

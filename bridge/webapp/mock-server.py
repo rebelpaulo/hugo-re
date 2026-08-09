@@ -7,17 +7,20 @@ Implementa um servidor WebSocket (RFC 6455) mínimo à mão — não há módulo
 na standard library.
 
 Uso:
-    .venv/bin/python bridge/webapp/mock-server.py [--port 8765] [--full] [--cycle 5]
+    .venv/bin/python bridge/webapp/mock-server.py [--port 8765] [--full] [--cycle 5] [--mode web]
 
     --full    arranca com os 4 lugares ocupados por "fantasmas", para forçar
               qualquer ligação nova a cair na fila (útil para testar o ecrã de fila).
     --cycle   segundos entre ciclos automáticos de "liberta um lugar e oferece
               a vez a quem está na fila" (para testar o ecrã "é a tua vez" sem
               precisar de 4 pessoas reais). 0 desliga o ciclo.
+    --mode    input_mode simulado (web/sip/both — ver bridge/config.yaml),
+              mandado ao cliente logo na ligação. Omissão: web.
 
 Protocolo (fixo, ver bridge/webapp/index.html e README do bridge):
     cliente -> servidor: hello, press, offhook, hangup, confirm, ping
-    servidor -> cliente: slot, queued, your_turn, released, pong
+    servidor -> cliente: config (logo na ligação), slot, queued, your_turn,
+                          released, pong
 """
 
 import argparse
@@ -36,6 +39,7 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 WEBAPP_DIR = os.path.dirname(os.path.abspath(__file__))
 COLORS = ["blue", "green", "red", "white"]
 OFFER_SECONDS = 15
+INPUT_MODE = "web"   # mudado por --mode (ver main())
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -281,6 +285,7 @@ class Handler(BaseHTTPRequestHandler):
 
         clients[client_id] = {"send": send}
         log(client_id, "ligou")
+        send({"type": "config", "input_mode": INPUT_MODE})
 
         try:
             while True:
@@ -311,7 +316,11 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--full", action="store_true", help="arranca com os 4 lugares ocupados")
     ap.add_argument("--cycle", type=float, default=5.0, help="segundos entre ciclos automáticos (0 desliga)")
+    ap.add_argument("--mode", choices=["web", "sip", "both"], default="web", help="input_mode simulado")
     args = ap.parse_args()
+
+    global INPUT_MODE
+    INPUT_MODE = args.mode
 
     if args.full:
         for i in range(4):
