@@ -73,21 +73,7 @@
   <section id="screen-phone" class="screen">
     <div class="phone-body">
 
-      <!-- Onde estás no ecrã grande. A cor sozinha não chegava: quem chega a
-           uma sala com um LED wall de quatro quadrantes precisa é de saber
-           para onde olhar. O mapa tem a mesma disposição 2x2 do jogo (ver
-           Game.positions em game/game.py) e o quadrante da pessoa acende com
-           o mesmo ícone de telefone que o jogo desenha lá. -->
       <div class="top-row">
-        <div class="screen-map" id="screen-map">
-          <p class="screen-map-label">ESTÁS NO ECRÃ</p>
-          <div class="screen-grid" id="screen-grid" aria-hidden="true">
-            <div class="screen-cell" data-cell="0"><img src="img/phone0.png" alt=""></div>
-            <div class="screen-cell" data-cell="1"><img src="img/phone1.png" alt=""></div>
-            <div class="screen-cell" data-cell="2"><img src="img/phone2.png" alt=""></div>
-            <div class="screen-cell" data-cell="3"><img src="img/phone3.png" alt=""></div>
-          </div>
-        </div>
         <div class="color-tag" id="color-tag">
           <span class="color-dot" id="color-dot"></span>
           <span class="color-name" id="color-name">—</span>
@@ -98,6 +84,17 @@
         <div class="lcd-line" id="lcd-status">PRONTO</div>
         <div class="lcd-line lcd-digits" id="lcd-digits">&nbsp;</div>
       </div>
+
+      <!-- Em qual dos quatro quadrantes do ecrã grande esta pessoa está a
+           jogar. O ícone é o mesmo ficheiro que o jogo desenha no canto do
+           quadrante (game/resources/images/phoneN_small.png), para se
+           reconhecer de relance na parede. Fica na faixa entre o LCD e o
+           teclado, e por cima do desfoque de "antes de atender" — é
+           precisamente antes de atender que se procura o sítio. -->
+      <p class="screen-here" id="screen-here" hidden>
+        <span>ESTÁS A JOGAR NO ECRÃ:</span>
+        <img id="screen-here-icon" src="" alt="">
+      </p>
 
       <div class="keypad">
         <button class="key" data-key="1" type="button"><span class="key-num">1</span></button>

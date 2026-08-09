@@ -192,16 +192,23 @@
     }
   }
 
-  // Acende o quadrante da pessoa no mapa do ecrã grande. A ordem das células
-  // no HTML é a mesma de `Game.positions` em game/game.py — jogador 0 em cima
-  // à esquerda, 1 em cima à direita, 2 em baixo à esquerda, 3 em baixo à
-  // direita. Índice fora de gama (ou ainda sem lugar) deixa as quatro
-  // apagadas, que é melhor do que apontar para o sítio errado.
+  // Mostra o ícone do quadrante desta pessoa ("estás a jogar no ecrã: X").
+  // É o mesmo ficheiro que o jogo desenha no canto do quadrante, e a ordem
+  // segue `Game.positions` em game/game.py: 0 em cima à esquerda, 1 em cima à
+  // direita, 2 em baixo à esquerda, 3 em baixo à direita. Sem lugar (ou
+  // índice fora de gama) esconde a linha inteira — melhor nada do que apontar
+  // para o sítio errado.
   function markQuadrant(player) {
-    var cells = document.querySelectorAll("#screen-grid .screen-cell");
-    for (var i = 0; i < cells.length; i++) {
-      cells[i].classList.toggle("mine", i === player);
+    var line = document.getElementById("screen-here");
+    var icon = document.getElementById("screen-here-icon");
+    if (typeof player !== "number" || player < 0 || player > 3) {
+      line.hidden = true;
+      icon.removeAttribute("src");
+      return;
     }
+    icon.src = "img/phone" + player + ".png";
+    icon.alt = "quadrante " + (player + 1);
+    line.hidden = false;
   }
 
   function onSlot(player, color) {
