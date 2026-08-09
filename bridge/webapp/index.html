@@ -15,6 +15,14 @@
 </head>
 <body>
 
+<!-- Splash — primeiro ecrã, antes de qualquer ligação. Sai sozinha ao fim de
+     1,8s fixos (ver phone.js), nunca à espera do WebSocket: numa rede de
+     evento lenta ninguém deve ficar a olhar para um ecrã parado sem saber
+     porquê. A ligação continua a fazer-se por trás. -->
+<div class="splash" id="splash" aria-hidden="true">
+  <img class="splash-logo" src="img/logo.png" alt="">
+</div>
+
 <div class="stage">
 
   <!-- 1. Mensagem para quem chega à webapp num evento input_mode=sip — não
@@ -44,12 +52,14 @@
       <div class="lcd-line" id="queue-ahead-line">–</div>
     </div>
     <p class="queue-note">Não feches o ecrã — avisamos-te aqui assim que chegar a tua vez.</p>
+    <div class="queue-deco" aria-hidden="true"></div>
     <div class="queue-dots"><span></span><span></span><span></span></div>
     <button class="btn-back" id="btn-queue-leave" type="button">← sair da fila</button>
   </section>
 
   <!-- 4. É a tua vez -->
   <section id="screen-turn" class="screen">
+    <img class="turn-burst" src="img/turn-burst.webp" alt="" aria-hidden="true">
     <div class="lcd lcd-standalone">
       <div class="lcd-line lcd-blink">É A TUA VEZ!</div>
       <div class="lcd-line">jogador <span id="turn-player">–</span> · <span id="turn-color-name">–</span></div>

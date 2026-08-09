@@ -28,6 +28,20 @@ O script cria ou verifica o `.venv` arm64 na raiz do repo, confirma o
 
 ## Ordem de arranque no dia do evento
 
+No dia do evento, a forma mais simples é fazer duplo-clique em
+`scripts/macos/Hugo.command` no Finder. Abre uma janela do Terminal, encontra
+a BigFile em `~/Claude code/hugo-assets/gold/BigFile` (ou usa `$HUGO_ASSETS`),
+corre o `doctor.sh` antes de arrancar e mostra o URL do lobby em letras grandes.
+Se o doctor encontrar uma falta essencial, o lançador pára antes de abrir o
+jogo; as duas FALHAs sobre jogo/bridge ainda não vivos são esperadas nessa
+verificação pré-arranque.
+
+Também o podes abrir a partir do Terminal com:
+
+```sh
+open scripts/macos/Hugo.command
+```
+
 Antes de mais, confirma `input_mode` em `bridge/config.yaml` consoante o que está montado
 na sala **desta** activação — `web` (só webapp/QR) ou `sip` (só telefones físicos); os dois
 nunca se cruzam no mesmo evento, e mudar isto não pede código, só reiniciar o bridge (ver
@@ -82,7 +96,9 @@ de reiniciar para sempre e mascarar um problema real de ambiente/config.
   ficheiro por sessão, nunca versionado — ver o `.gitignore` da pasta).
 - Ctrl-C (ou `kill` ao processo) pára tudo de forma limpa: primeiro SIGTERM,
   e se o processo não sair em 5s (medido: acontece com o jogo/pygame),
-  escala para SIGKILL. Nunca deixa processos nem portas presos.
+  escala para SIGKILL. Isto funciona quer o sinal seja enviado só ao PID do
+  supervisor (`kill -INT <pid>` ou `kill -TERM <pid>`), quer seja um Ctrl-C
+  enviado ao grupo de processos. Nunca deixa processos nem portas presos.
 - **Não** arranca o audio-server clássico (`run-audio.sh`) por omissão — a
   partir do B2 o bridge, em `audio.mode: devices`, já escuta ele próprio as
   portas 9001-9004 para encaminhar som para os telemóveis
@@ -105,6 +121,21 @@ responde, se o jogo está vivo, e o IP do lobby. `[ok]`/`[FALHA]` em cada
 linha, sai != 0 se faltar algo essencial. Corre-se depois de o
 `supervisor.sh` já ter arrancado tudo — antes disso é normal ver `[FALHA]`
 em "bridge"/"jogo".
+
+## Se algo ficar preso
+
+Fecha primeiro o supervisor com Ctrl-C ou `kill -TERM <pid-do-supervisor>`.
+Se, excepcionalmente, uma porta continuar ocupada, identifica o processo antes
+de o terminar — não uses um `pkill -f` com um padrão ingénuo:
+
+```sh
+lsof -nP -iTCP:8080 -iUDP:9100 -iUDP:9001 -iUDP:9002 -iUDP:9003 -iUDP:9004
+kill -TERM <pid>
+sleep 5
+kill -KILL <pid> # só se ainda estiver vivo
+```
+
+Confirma de novo com o mesmo `lsof` antes de voltar a arrancar.
 
 ## Comportamento dos scripts
 

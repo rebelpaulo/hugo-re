@@ -35,7 +35,26 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-VENV_PY="$REPO_DIR/.venv/bin/python3"
+VENV_PY="$REPO_DIR/.venv/bin/python"
+
+# Quando este ficheiro é lançado com `... &`, o Bash não interactivo herda
+# SIGINT como ignorado. Nessa situação Bash 3.2 não permite que `trap INT`
+# o volte a apanhar: `kill -INT <pid>` seria ignorado para sempre. Recomeçamos
+# uma vez por Python da .venv, que repõe INT/TERM no estado por omissão antes
+# de re-executar Bash. O PID não muda, por isso quem lançou o supervisor pode
+# continuar a enviar-lhe sinais directamente.
+if [[ "${HUGO_SUPERVISOR_SIGNALS_READY:-}" != "1" ]] && [[ -x "$VENV_PY" ]]; then
+  export HUGO_SUPERVISOR_SIGNALS_READY=1
+  exec "$VENV_PY" -c '
+import os
+import signal
+import sys
+
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+signal.signal(signal.SIGTERM, signal.SIG_DFL)
+os.execv(sys.argv[1], sys.argv[1:])
+' /bin/bash "$0" "$@"
+fi
 
 AUDIO_PA=0
 ASSETS=""
@@ -69,7 +88,10 @@ log() {
 # -- limite de reinícios: 3 mortes do mesmo processo em menos de 60s = desiste
 MAX_DEATHS=3
 WINDOW_SECONDS=60
-POLL_INTERVAL=2
+# Bash só corre uma trap pendente quando o comando em primeiro plano acaba.
+# Um intervalo curto limita a latência de INT/TERM, sem transformar a vigia
+# num ciclo ocupado. `wait -n` não existe no Bash 3.2 fornecido pelo macOS.
+POLL_INTERVAL=0.2
 
 # Janela deslizante de timestamps de morte, sem arrays (bash 3.2 do macOS não
 # tem `local -n`/namerefs) — três variáveis escalares chegam como fila FIFO.
@@ -112,13 +134,11 @@ start_audio_pa() {
 stop_audio_pa() {
   [[ "$AUDIO_PA" -eq 1 ]] || return 0
   log "== a desligar o audio-server clássico =="
-  [[ -n "$AUDIO_SERVER_PID" ]] && kill "$AUDIO_SERVER_PID" 2>/dev/null || true
-  [[ -n "$AUDIO_WRAPPER_PID" ]] && kill "$AUDIO_WRAPPER_PID" 2>/dev/null || true
-  for _ in $(seq 1 15); do
-    audio_vivo || break
-    sleep 0.3
-  done
-  audio_vivo && pkill -f "$PADRAO_AUDIO" 2>/dev/null || true
+  [[ -n "$AUDIO_SERVER_PID" ]] && matar_com_escalada "$AUDIO_SERVER_PID" "o audio-server clássico"
+  [[ -n "$AUDIO_WRAPPER_PID" ]] && matar_com_escalada "$AUDIO_WRAPPER_PID" "o lançador do audio-server"
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] && matar_com_escalada "$pid" "um audio-server clássico residual"
+  done < <(pgrep -f "$PADRAO_AUDIO" 2>/dev/null || true)
 }
 
 start_game() {
@@ -142,11 +162,21 @@ matar_com_escalada() {
   kill -0 "$pid" 2>/dev/null || return 0
   kill "$pid" 2>/dev/null || true
   for _ in $(seq 1 17); do
-    kill -0 "$pid" 2>/dev/null || { log "[ok] $nome parou."; return 0; }
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid" 2>/dev/null || true
+      log "[ok] $nome parou."
+      return 0
+    fi
     sleep 0.3
   done
   log "[aviso] $nome não reagiu a SIGTERM em 5s; a forçar com SIGKILL."
   kill -9 "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  if kill -0 "$pid" 2>/dev/null; then
+    log "[aviso] não consegui confirmar a paragem de $nome (PID $pid)."
+  else
+    log "[ok] $nome foi forçado a parar."
+  fi
 }
 
 parar_tudo() {
@@ -191,7 +221,9 @@ start_bridge
 
 log "== a vigiar (Ctrl-C para tudo de forma limpa) =="
 while true; do
-  sleep "$POLL_INTERVAL"
+  # O `|| true` evita que `set -e` saia antes de a trap correr se o sleep for
+  # interrompido por INT ou TERM.
+  sleep "$POLL_INTERVAL" || true
   AGORA="$(date +%s)"
 
   if [[ -n "$GAME_PID" ]] && ! kill -0 "$GAME_PID" 2>/dev/null; then

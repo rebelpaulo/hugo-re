@@ -278,6 +278,20 @@
     document.getElementById("lcd-status").textContent = offHook ? "EM CHAMADA" : "PRONTO";
   });
 
+  // ---------------- Splash ----------------
+  //
+  // 1,8s fixos e sai, nunca à espera do WebSocket — numa rede de evento lenta
+  // ninguém deve ficar a olhar para um ecrã parado sem perceber porquê. A
+  // ligação (connectWS, abaixo) continua a fazer-se por trás.
+
+  var SPLASH_MS = 1800;
+  var SPLASH_FADE_MS = 350;
+  var splashEl = document.getElementById("splash");
+  setTimeout(function () {
+    splashEl.classList.add("hide");
+    setTimeout(function () { splashEl.hidden = true; }, SPLASH_FADE_MS);
+  }, SPLASH_MS);
+
   // ---------------- Arranque ----------------
   //
   // Sem seletor: liga-se logo ao carregar a página. O ecrã "a ligar" já está

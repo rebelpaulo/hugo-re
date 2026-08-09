@@ -25,8 +25,11 @@ html, body {
   height: 100dvh;
   height: 100vh;
   background:
-    radial-gradient(ellipse at 30% 0%, #4a4a42 0%, transparent 60%),
-    linear-gradient(160deg, #d9d4bf 0%, #c7c2ac 45%, #b3ae99 100%);
+    /* vinheta: escurece as quatro margens por cima da textura */
+    radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.30) 100%),
+    /* sombra de canto original, sobre a textura */
+    radial-gradient(ellipse at 25% 0%, rgba(20,19,15,0.35) 0%, transparent 55%),
+    url("img/plastic-texture.webp") center / cover no-repeat;
   overflow: hidden;
 }
 
@@ -39,6 +42,36 @@ html, body {
   padding: max(24px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
 }
 .screen.active { display: flex; }
+
+/* ---------- Splash — primeiro ecrã, sai sozinha ao fim de 1,8s (ver phone.js) ---------- */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #100f0d;
+  opacity: 1;
+  transition: opacity 350ms ease;
+  animation: splash-flicker 150ms steps(1);
+}
+.splash.hide { opacity: 0; }
+.splash-logo {
+  width: min(80vw, 360px);
+  height: auto;
+  filter: drop-shadow(0 10px 26px rgba(0,0,0,0.55));
+}
+@keyframes splash-flicker {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  24%  { opacity: 0.15; }
+  36%  { opacity: 1; }
+  50%  { opacity: 0.4; }
+  70%  { opacity: 1; }
+  100% { opacity: 1; }
+}
 
 /* ---------- Aviso de fallback em input_mode=sip (ver bridge/config.yaml e
    phone.js) — alguém chegou à webapp num evento que é só telefones. Não é o
@@ -109,6 +142,32 @@ html, body {
   font-size: 3.8vw;
   margin-top: 22px;
 }
+/* zona morta entre a nota e os pontos — padrão tipo bilhete picotado, só CSS */
+.queue-deco {
+  flex: 1;
+  width: 100%;
+  max-width: 380px;
+  min-height: 40px;
+  margin: 20px auto 0;
+  position: relative;
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(58,58,52,0.10) 0px, rgba(58,58,52,0.10) 2px,
+    transparent 2px, transparent 16px
+  );
+}
+.queue-deco::before,
+.queue-deco::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 0;
+  border-top: 3px dashed rgba(58,58,52,0.35);
+}
+.queue-deco::before { top: 0; }
+.queue-deco::after { bottom: 0; }
 .queue-dots {
   display: flex;
   gap: 10px;
@@ -125,6 +184,24 @@ html, body {
 @keyframes queuepulse { 0%,80%,100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
 
 /* ---------- É a tua vez ---------- */
+
+#screen-turn { position: relative; }
+.turn-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 135vw;
+  max-width: 620px;
+  transform: translate(-50%, -50%);
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 0;
+}
+#screen-turn .lcd,
+#screen-turn .btn-confirm {
+  position: relative;
+  z-index: 1;
+}
 
 .btn-confirm {
   margin-top: 8vh;
@@ -174,7 +251,11 @@ html, body {
 .color-dot {
   width: 18px; height: 18px; border-radius: 50%;
   background: #888;
-  box-shadow: inset 0 0 3px rgba(0,0,0,0.5), 0 0 6px currentColor;
+  box-shadow:
+    inset 0 0 3px rgba(0,0,0,0.5),
+    0 0 6px currentColor,
+    0 0 14px currentColor,
+    0 0 22px currentColor;
   border: 2px solid rgba(255,255,255,0.5);
 }
 .color-name {
