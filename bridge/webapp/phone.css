@@ -313,16 +313,31 @@ html, body {
   align-items: center;
   justify-content: center;
   color: #34342e;
+  /* Sem isto o Android põe um retângulo cinzento por cima da tecla ao tocar,
+     que estraga o efeito de plástico. E `manipulation` tira o atraso de
+     espera pelo duplo-toque. */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  transition: transform 40ms ease-out, box-shadow 40ms ease-out;
 }
+/* A tecla afunda até ao fim do curso — nada de meio caminho. Num sítio
+   escuro e com barulho, o toque tem de ser inequívoco: quem carrega tem de
+   ver que carregou, sem olhar duas vezes. O halo verde é o mesmo do LCD, e
+   dá um segundo sinal para quem estiver a segurar o telemóvel de lado. */
 .key:active,
 .key.pressed {
-  transform: translateY(4px);
-  background: linear-gradient(180deg, #d2cdb6 0%, #bcb79f 100%);
+  transform: translateY(5px);
+  background: linear-gradient(180deg, #c8c3ab 0%, #b2ad95 100%);
   box-shadow:
-    0 1px 0 #8f8b78,
-    0 2px 4px rgba(0,0,0,0.3),
-    inset 0 1px 0 rgba(255,255,255,0.4);
+    0 0 0 #8f8b78,
+    0 1px 3px rgba(0,0,0,0.35),
+    0 0 14px rgba(124,154,58,0.55),
+    inset 0 2px 5px rgba(0,0,0,0.28);
 }
+/* O número acompanha, senão a tecla afunda e o texto parece flutuar. */
+.key:active .key-num,
+.key.pressed .key-num { color: #1e1e1a; }
 .key-num { font-size: 8vw; font-weight: 800; line-height: 1; }
 .key-letters { font-size: 2.6vw; letter-spacing: 2px; color: #6b6b5f; margin-top: 2px; }
 .key-star .key-num, .key-hash .key-num { font-size: 7vw; }

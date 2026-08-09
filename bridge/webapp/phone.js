@@ -268,7 +268,12 @@
   var digitsBuffer = "";
 
   document.querySelectorAll(".key").forEach(function (btn) {
-    btn.addEventListener("click", function () {
+    // `pointerdown` e não `click`: o click só dispara ao LARGAR o dedo, o que
+    // num teclado se sente lento e faz duvidar que a tecla tenha registado.
+    // Assim a tecla afunda, vibra e soa no instante do toque, como um
+    // telefone a sério. O preventDefault evita o click fantasma a seguir.
+    btn.addEventListener("pointerdown", function (evento) {
+      evento.preventDefault();
       var key = btn.getAttribute("data-key");
       // A tecla é a acção principal. Entra primeiro e nunca depende do som.
       send({ type: "press", key: key });
