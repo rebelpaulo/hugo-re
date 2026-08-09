@@ -61,7 +61,17 @@ fi
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/hugo-pt-build.XXXXXX")"
 # STAGE_VIDEO/STAGE_AUDIO só ficam definidas mais abaixo; a expansão
 # "${VAR:-}" evita "unbound variable" se a trap disparar antes disso.
-trap 'rm -rf "$WORK_DIR" "${STAGE_VIDEO:-}" "${STAGE_AUDIO:-}"' EXIT
+# A limpeza só apaga pastas cujo nome contenha ".build-" — rede de
+# segurança para nunca apagar uma pasta de destino por engano.
+limpar() {
+  rm -rf "$WORK_DIR"
+  local d
+  for d in "${STAGE_VIDEO:-}" "${STAGE_AUDIO:-}"; do
+    [[ -n "$d" && "$d" == *.build-* ]] && rm -rf "$d"
+  done
+  return 0
+}
+trap limpar EXIT
 META_FILE="$WORK_DIR/cortes.tsv"
 
 # Resolve os caminhos e valida o schema sem criar outputs.
@@ -237,14 +247,14 @@ frame_yavg() {
 # (achado 3) depois de o conjunto inteiro passar a verificação. Assim uma
 # falha a meio nunca deixa clips novos misturados com antigos, nem um par
 # vídeo/áudio dessincronizado.
+# Os caminhos de staging são SEMPRE distintos dos de destino, mesmo em
+# dry-run. Se apontassem para o destino, a trap de limpeza apagava os
+# assets reais à saída — e um --dry-run destruía o que diz não tocar.
+STAGE_VIDEO="$OUTPUT_VIDEO.build-$$"
+STAGE_AUDIO="$OUTPUT_AUDIO.build-$$"
 if [[ "$DRY_RUN" -eq 0 ]]; then
-  STAGE_VIDEO="$OUTPUT_VIDEO.build-$$"
-  STAGE_AUDIO="$OUTPUT_AUDIO.build-$$"
   rm -rf "$STAGE_VIDEO" "$STAGE_AUDIO"
   mkdir -p "$STAGE_VIDEO" "$STAGE_AUDIO"
-else
-  STAGE_VIDEO="$OUTPUT_VIDEO"
-  STAGE_AUDIO="$OUTPUT_AUDIO"
 fi
 
 echo "Master: $SOURCE (${MASTER_DURATION}s)"
