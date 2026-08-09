@@ -102,6 +102,7 @@ async def run(config_path: Path) -> None:
 
     audio_config = config.get("audio")
     audio_mode = (audio_config or {}).get("mode", "desligado")
+    score_config = config.get("score")
     sip_config = config.get("sip") or {}
 
     banner = "=" * 64
@@ -110,6 +111,8 @@ async def run(config_path: Path) -> None:
     print(f"  QR:     {QR_OUTPUT} ({width}x{height}px)")
     print(f"  JOGO:   UDP {emitter.host}:{emitter.port} (não muda, fica em loopback)")
     print(f"  AUDIO:  modo={audio_mode}")
+    if score_config:
+        print(f"  SCORE:  UDP {score_config.get('host', '127.0.0.1')}:{score_config.get('port', 9110)} · top10 em /top10")
     if input_mode == "sip":
         print(
             f"  SIP:    ESL {sip_config.get('esl_host', '127.0.0.1')}:"
@@ -118,7 +121,9 @@ async def run(config_path: Path) -> None:
         print("          ver scripts/macos/run-sip.sh para arrancar o FreeSWITCH")
     print(banner)
 
-    app, route = create_app(manager, audio_config=audio_config, input_mode=input_mode)
+    app, route = create_app(
+        manager, audio_config=audio_config, input_mode=input_mode, score_config=score_config
+    )
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)

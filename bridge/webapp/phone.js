@@ -16,7 +16,7 @@
   var COLOR_NAME_PT = { blue: "azul", green: "verde", red: "vermelho", white: "branco" };
 
   var screens = {};
-  ["sip", "connecting", "queue", "turn", "phone"].forEach(function (id) {
+  ["sip", "connecting", "queue", "turn", "phone", "name", "top10"].forEach(function (id) {
     screens[id] = document.getElementById("screen-" + id);
   });
 
@@ -176,6 +176,12 @@
       case "released":
         onReleased();
         break;
+      case "finished":
+        onFinished();
+        break;
+      case "top10":
+        onTop10(msg.entries, msg.own);
+        break;
       case "pong":
         break; // heartbeat, nada a fazer
       case "audio":
@@ -250,6 +256,48 @@
   function onReleased() {
     clearInterval(turnCountdownTimer);
     reconnectFresh();
+  }
+
+  // A partida acabou (jogo entrou no ecrã de fim — ver
+  // game/tv_show/ending.py + game/tv_show/in_cave.py:19). Primeira vez que
+  // o jogo "fala de volta" para o bridge: o telemóvel passa para o ecrã de
+  // nome, e depois de submeter fica no top10 — sem volta, ver onTop10.
+  function onFinished() {
+    clearInterval(turnCountdownTimer);
+    resetNameEntry();
+    showScreen("name");
+    vibrate(60);
+  }
+
+  function onTop10(entries, own) {
+    var list = document.getElementById("top10-list");
+    list.innerHTML = "";
+    (entries || []).forEach(function (entry, idx) {
+      var isOwn = !!own && entry.name === own.name && entry.score === own.score;
+      var li = document.createElement("li");
+      li.className = "top10-row" + (isOwn ? " top10-own" : "");
+
+      var rank = document.createElement("span");
+      rank.className = "top10-rank";
+      rank.textContent = (idx + 1) + "º";
+
+      var name = document.createElement("span");
+      name.className = "top10-name";
+      name.textContent = entry.name;
+
+      var score = document.createElement("span");
+      score.className = "top10-score";
+      score.textContent = entry.score;
+
+      li.appendChild(rank);
+      li.appendChild(name);
+      li.appendChild(score);
+      list.appendChild(li);
+    });
+    showScreen("top10");
+    // Último ecrã: de propósito não há nenhum listener de tecla/toque daqui
+    // para a frente que volte ao jogo — o bloqueio é a rotação (ver
+    // bridge/README.md e o ticket). Só lendo o QR outra vez.
   }
 
   // ---------------- UI: sinalética ----------------
@@ -329,6 +377,109 @@
       });
     });
   });
+
+  // ---------------- UI: nome (fim de partida) ----------------
+  //
+  // Teclado próprio, gerado aqui em vez de escrito à mão no HTML (são 39
+  // teclas) — o teclado do sistema tapa o ecrã e não combina com o resto.
+  // Mesmo limite do servidor (ver bridge/score_store.py: MAX_NAME_LEN):
+  // 8 caracteres, só A-Z/0-9/espaço, o servidor normaliza/filtra na mesma
+  // por segurança — este limite é só para a pessoa ver o que está a fazer.
+
+  var NAME_MAX_LEN = 8;
+  var nameBuffer = "";
+  var nameSubmitted = false;
+  var nameBufferEl = document.getElementById("name-buffer");
+  var namepadEl = document.getElementById("namepad");
+
+  function resetNameEntry() {
+    nameBuffer = "";
+    nameSubmitted = false;
+    renderNameBuffer();
+    setNamepadDisabled(false);
+  }
+
+  function renderNameBuffer() {
+    var shown = nameBuffer.split("");
+    while (shown.length < NAME_MAX_LEN) shown.push("_");
+    nameBufferEl.textContent = shown.join(" ");
+  }
+
+  function setNamepadDisabled(disabled) {
+    namepadEl.querySelectorAll(".namekey").forEach(function (btn) {
+      btn.disabled = disabled;
+    });
+  }
+
+  function buildNamepad() {
+    var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split("");
+    chars.forEach(function (ch) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "namekey";
+      btn.textContent = ch;
+      btn.addEventListener("pointerdown", function (evento) {
+        evento.preventDefault();
+        pressNamekey(btn, function () {
+          if (nameBuffer.length < NAME_MAX_LEN) nameBuffer += ch;
+        });
+      });
+      namepadEl.appendChild(btn);
+    });
+
+    var del = document.createElement("button");
+    del.type = "button";
+    del.className = "namekey namekey-del";
+    del.textContent = "⌫";
+    del.setAttribute("aria-label", "Apagar");
+    del.addEventListener("pointerdown", function (evento) {
+      evento.preventDefault();
+      pressNamekey(del, function () {
+        nameBuffer = nameBuffer.slice(0, -1);
+      });
+    });
+    namepadEl.appendChild(del);
+
+    var space = document.createElement("button");
+    space.type = "button";
+    space.className = "namekey namekey-space";
+    space.textContent = "ESPAÇO";
+    space.addEventListener("pointerdown", function (evento) {
+      evento.preventDefault();
+      pressNamekey(space, function () {
+        if (nameBuffer.length < NAME_MAX_LEN) nameBuffer += " ";
+      });
+    });
+    namepadEl.appendChild(space);
+
+    var ok = document.createElement("button");
+    ok.type = "button";
+    ok.className = "namekey namekey-ok";
+    ok.textContent = "OK";
+    ok.addEventListener("pointerdown", function (evento) {
+      evento.preventDefault();
+      pressNamekey(ok, submitName);
+    });
+    namepadEl.appendChild(ok);
+  }
+
+  function pressNamekey(btn, action) {
+    if (nameSubmitted) return;
+    action();
+    renderNameBuffer();
+    btn.classList.add("pressed");
+    setTimeout(function () { btn.classList.remove("pressed"); }, 120);
+    vibrate(20);
+  }
+
+  function submitName() {
+    if (nameSubmitted) return;
+    nameSubmitted = true;
+    setNamepadDisabled(true);
+    send({ type: "name", name: nameBuffer });
+  }
+
+  buildNamepad();
 
   // ---------------- UI: auscultador ----------------
 

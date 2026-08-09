@@ -123,6 +123,28 @@
     </div>
   </section>
 
+  <!-- 6. Fim de partida — nome. Chega ao ecrã via {"type":"finished"} (ver
+       phone.js); teclado próprio (não o do sistema, que tapa o ecrã) gerado
+       por JS em #namepad, estilo recordes de sala de jogos. -->
+  <section id="screen-name" class="screen">
+    <div class="lcd lcd-standalone">
+      <div class="lcd-line">ESCREVE O TEU NOME</div>
+      <div class="lcd-line lcd-digits" id="name-buffer">&nbsp;</div>
+    </div>
+    <div class="namepad" id="namepad"></div>
+  </section>
+
+  <!-- 7. Fim de partida — top10 do dia. Último ecrã: sem botão de voltar, o
+       bloqueio é deliberado (para jogar de novo é preciso ler o QR outra
+       vez e entrar na fila — ver phone.js/onReleased). -->
+  <section id="screen-top10" class="screen">
+    <div class="lcd lcd-standalone">
+      <div class="lcd-line">TOP 10 DE HOJE</div>
+    </div>
+    <ol class="top10-list" id="top10-list"></ol>
+    <p class="top10-note">Para voltar a jogar, lê o QR outra vez e entra na fila.</p>
+  </section>
+
 </div>
 
 <div class="reconnect-dot" id="reconnect-dot" hidden></div>

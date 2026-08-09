@@ -84,3 +84,22 @@ audio:
   pa_host: 127.0.0.1
   pa_ports: [9101, 9102, 9103, 9104]
   pa_timeout_seconds: 0.4
+
+# Pontuação do dia: liga a pontuação que o jogo manda por UDP no fim da
+# partida (game/score_report.py) ao nome que o jogador escreve depois do
+# ecrã de "finished" (ver bridge/webapp/ e bridge/score_store.py). O top10
+# é sempre o da SESSÃO activa (janela de 24h a contar do arranque, não a
+# data do calendário — o evento atravessa a meia-noite; ver score_store.py
+# para a decisão completa), nunca apagado por um restart do bridge.
+score:
+  host: 127.0.0.1
+  # Porta nova, só para isto. 9102 foi a sugestão inicial do ticket, mas
+  # colide com audio.pa_ports acima (modo "pa") — 9110 para nunca arriscar
+  # a mesma porta que o áudio em palco. Combina com HUGO_SCORE_PORT do lado
+  # do jogo (game/score_report.py), que não lê este ficheiro.
+  port: 9110
+  # Onde ficam as bases SQLite (uma por sessão de 24h) — gitignored.
+  data_dir: bridge/data
+  # Lista de palavras a filtrar do nome, uma por linha — editável pela
+  # produção sem tocar em código.
+  badwords_path: bridge/badwords.txt

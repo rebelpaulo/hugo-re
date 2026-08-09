@@ -9,6 +9,7 @@ Contrato WebSocket (`/ws`), fixo com a webapp:
         {"type":"hello","mode":"web"}
         {"type":"press","key":"5"}          key em 0-9, "*", "#"
         {"type":"offhook"} / {"type":"hangup"} / {"type":"confirm"} / {"type":"ping"}
+        {"type":"name","name":"HUGO"}       só depois de "finished", uma vez (ver secção "Pontuação")
 
     Servidor -> cliente:
         {"type":"config","input_mode":"web"}        enviado logo na ligação, antes de tudo
@@ -17,6 +18,7 @@ Contrato WebSocket (`/ws`), fixo com a webapp:
         {"type":"your_turn","player":2,"seconds":15}
         {"type":"released"}
         {"type":"finished"}
+        {"type":"top10","entries":[{"name":"HUGO","score":4200},...],"own":{"name":"HUGO","score":4200}|null}
         {"type":"pong"}
         {"type":"audio","action":"play","resource":"...","loops":0,"id":7}
         {"type":"audio","action":"stop","id":7}
@@ -44,6 +46,7 @@ import yaml
 from aiohttp import WSMsgType, web
 
 from audio_router import AudioRouter
+from score_store import ScoreStore, start_score_listener
 from slot_manager import Decision, SlotManager
 
 
@@ -133,11 +136,19 @@ class WebBridge:
         *,
         heartbeat_timeout: float = HEARTBEAT_TIMEOUT_SECONDS,
         input_mode: str = DEFAULT_INPUT_MODE,
+        score_store: ScoreStore | None = None,
     ) -> None:
         self.manager = manager
         self.heartbeat_timeout = heartbeat_timeout
         self.input_mode = input_mode
+        self.score_store = score_store
         self._sockets: dict[str, web.WebSocketResponse] = {}
+        # Sessões elegíveis para mandar UM "name": armado quando "finished"
+        # sai para o cliente (ver route() abaixo), consumido em
+        # _handle_name — nunca por session.player do SlotManager, que já
+        # voltou a None assim que o lugar foi libertado (ver
+        # `release_player`/`_release_active` em slot_manager.py).
+        self._finished_players: dict[str, int] = {}
 
     async def route(self, decisions: list[Decision]) -> None:
         """Encaminha cada Decision para a sessão certa.
@@ -153,6 +164,8 @@ class WebBridge:
             message = decision_to_message(decision, self.manager.clock)
             if message is None or decision.source_id is None:
                 continue
+            if message.get("type") == "finished" and self.score_store is not None:
+                self._finished_players[decision.source_id] = decision.player
             ws = self._sockets.get(decision.source_id)
             if ws is None or ws.closed:
                 continue
@@ -199,6 +212,7 @@ class WebBridge:
                     break
         finally:
             del self._sockets[source_id]
+            self._finished_players.pop(source_id, None)
             await self.route(self.manager.disconnect(source_id))
             if not ws.closed:
                 await ws.close()
@@ -223,8 +237,28 @@ class WebBridge:
             await self.route(self.manager.handle_event(source_id, "hungup"))
         elif mtype == "confirm":
             await self.route(self.manager.confirm(source_id))
+        elif mtype == "name":
+            await self._handle_name(source_id, data)
         else:
             LOGGER.debug("Sessão %s enviou mensagem desconhecida: %r", source_id, mtype)
+
+    async def _handle_name(self, source_id: str, data: dict) -> None:
+        """`{"type":"name","name":"..."}` — só aceite de uma sessão que
+        acabou de receber "finished", e só uma vez (`pop`, ver __init__)."""
+        if self.score_store is None:
+            return
+        player = self._finished_players.pop(source_id, None)
+        if player is None:
+            LOGGER.debug("Sessão %s mandou 'name' sem estar elegível — ignorado", source_id)
+            return
+        entry = self.score_store.submit(player, data.get("name"))
+        message = {"type": "top10", "entries": self.score_store.top10(), "own": entry}
+        ws = self._sockets.get(source_id)
+        if ws is not None and not ws.closed:
+            try:
+                await ws.send_json(message)
+            except ConnectionResetError:
+                LOGGER.debug("Sessão %s fechou antes de receber o top10", source_id)
 
 
 _RESOURCE_CALL_RE = re.compile(r'load_(speak|sfx)\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)')
@@ -436,6 +470,17 @@ async def audio_manifest_handler(request: web.Request) -> web.StreamResponse:
     return web.json_response(request.app["audio_manifest"])
 
 
+async def top10_handler(request: web.Request) -> web.StreamResponse:
+    """`GET /top10` — o top10 da sessão activa (ver `score_store.py`), em
+    JSON. Mesma lista que a webapp já recebe embutida na resposta ao
+    "name"; existe também como rota própria para outros ecrãs (ex. o LED
+    grande) puderem ler sem passar pelo WebSocket."""
+    store: ScoreStore | None = request.app.get("score_store")
+    if store is None:
+        raise web.HTTPNotFound()
+    return web.json_response(store.top10())
+
+
 async def qr_handler(request: web.Request) -> web.StreamResponse:
     if QR_PATH.is_file():
         return web.FileResponse(QR_PATH)
@@ -464,6 +509,7 @@ def create_app(
     heartbeat_timeout: float = HEARTBEAT_TIMEOUT_SECONDS,
     audio_config: dict | None = None,
     input_mode: str | None = None,
+    score_config: dict | None = None,
 ) -> tuple[web.Application, Callable[[list[Decision]], "asyncio.Future[None]"]]:
     """Constrói a app aiohttp; devolve também `route` para o tick periódico do main.py usar.
 
@@ -475,6 +521,11 @@ def create_app(
     caso normal — `main.py` não passa este argumento), é lido directamente
     de `bridge/config.yaml`, tal como `audio_config` já é lido por `main.py`
     antes de chegar aqui.
+
+    `score_config` é a secção `score` do `config.yaml` (ver `score_store.py`
+    e `bridge/README.md`). Sem ela (`None`), nem o listener UDP nem a rota
+    `/top10` arrancam, e "name" da webapp é ignorado — usado pelos testes
+    existentes que não precisam de pontuação.
     """
     if input_mode is None:
         input_mode = load_input_mode()
@@ -482,8 +533,41 @@ def create_app(
         LOGGER.warning("input_mode=%r inválido — a usar %s", input_mode, DEFAULT_INPUT_MODE)
         input_mode = DEFAULT_INPUT_MODE
 
-    bridge = WebBridge(manager, heartbeat_timeout=heartbeat_timeout, input_mode=input_mode)
+    score_store: ScoreStore | None = None
+    if score_config:
+        data_dir = Path(score_config.get("data_dir", "bridge/data"))
+        if not data_dir.is_absolute():
+            data_dir = REPO_ROOT / data_dir
+        badwords_path = Path(score_config.get("badwords_path", "bridge/badwords.txt"))
+        if not badwords_path.is_absolute():
+            badwords_path = REPO_ROOT / badwords_path
+        score_store = ScoreStore(data_dir, badwords_path)
+
+    bridge = WebBridge(
+        manager,
+        heartbeat_timeout=heartbeat_timeout,
+        input_mode=input_mode,
+        score_store=score_store,
+    )
     app = web.Application()
+
+    if score_store is not None:
+        app["score_store"] = score_store
+        app.router.add_get("/top10", top10_handler)
+        score_host = score_config.get("host", "127.0.0.1")
+        score_port = int(score_config.get("port", 9110))
+
+        async def _start_score_listener(_app: web.Application) -> None:
+            _app["score_transport"] = await start_score_listener(score_store, score_host, score_port)
+
+        async def _stop_score_listener(_app: web.Application) -> None:
+            transport = _app.get("score_transport")
+            if transport is not None:
+                transport.close()
+            score_store.close()
+
+        app.on_startup.append(_start_score_listener)
+        app.on_cleanup.append(_stop_score_listener)
 
     if audio_config:
         assets_path = Path(audio_config["assets_path"]).resolve()

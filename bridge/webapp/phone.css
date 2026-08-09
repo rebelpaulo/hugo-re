@@ -412,6 +412,108 @@ html, body {
 .key-letters { font-size: 2.6vw; letter-spacing: 2px; color: #6b6b5f; margin-top: 2px; }
 .key-star .key-num, .key-hash .key-num { font-size: 7vw; }
 
+/* ---------- Fim de partida: nome (teclado próprio, estilo recordes de
+   sala de jogos) ---------- */
+
+.namepad {
+  width: 100%;
+  max-width: 420px;
+  margin-top: 4vh;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.namekey {
+  aspect-ratio: 1 / 1;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f0ebdd 0%, #d2cdb6 100%);
+  box-shadow:
+    0 4px 0 #8f8b78,
+    0 7px 10px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.7);
+  color: #34342e;
+  font-size: 4.6vw;
+  font-weight: 800;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  transition: transform 40ms ease-out, box-shadow 40ms ease-out;
+}
+.namekey:active,
+.namekey.pressed {
+  transform: translateY(4px);
+  background: linear-gradient(180deg, #c8c3ab 0%, #b2ad95 100%);
+  box-shadow:
+    0 0 0 #8f8b78,
+    0 1px 2px rgba(0,0,0,0.3),
+    0 0 12px rgba(124,154,58,0.5),
+    inset 0 2px 4px rgba(0,0,0,0.25);
+}
+.namekey-del {
+  background: linear-gradient(180deg, #d9a888 0%, #b5754f 100%);
+  color: #fff2ea;
+  font-size: 3.4vw;
+}
+.namekey-space {
+  grid-column: span 3;
+  aspect-ratio: auto;
+  font-size: 3.2vw;
+  letter-spacing: 2px;
+}
+.namekey-ok {
+  grid-column: span 2;
+  aspect-ratio: auto;
+  background: linear-gradient(180deg, #9fc25a 0%, #6f9a2f 100%);
+  color: #f4fbe6;
+  font-size: 4vw;
+  letter-spacing: 2px;
+}
+.namekey[disabled] { opacity: 0.5; }
+
+/* ---------- Fim de partida: top10 do dia (ecrã final, sem volta) ---------- */
+
+.top10-list {
+  list-style: none;
+  margin: 3vh 0 0;
+  padding: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+.top10-row {
+  display: grid;
+  grid-template-columns: 2.2em 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: #efe9d8;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  font-size: 4vw;
+}
+.top10-rank { color: #b8b2a0; text-align: right; }
+.top10-name { letter-spacing: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top10-score { text-align: right; }
+.top10-own {
+  background: linear-gradient(180deg, rgba(232,185,63,0.35), rgba(232,185,63,0.15));
+  box-shadow: 0 0 0 2px #e8b93f, 0 0 18px rgba(232,185,63,0.5);
+  color: #fff2ea;
+}
+.top10-note {
+  max-width: 380px;
+  text-align: center;
+  color: #4a4a42;
+  font-size: 3.8vw;
+  margin-top: 20px;
+}
+
 /* ---------- Indicador discreto de reconexão ---------- */
 
 .reconnect-dot {
