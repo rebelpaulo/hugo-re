@@ -8,12 +8,11 @@ de mocks de rede, tal como os outros testes do bridge. Usa ficheiros reais de
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import socket
+import subprocess
 import tempfile
 import time
-import wave
 from pathlib import Path
 
 from aiohttp import ClientSession, web
@@ -52,6 +51,21 @@ def free_port() -> int:
     port = sock.getsockname()[1]
     sock.close()
     return port
+
+
+def _probe(path: Path) -> tuple[str, int, float]:
+    """(codec, canais, duração) de um ficheiro de áudio, via ffprobe.
+
+    O áudio servido deixou de ser WAV (ver `_convert_to_aac` em
+    `adapters/web_adapter.py`), portanto o módulo `wave` já não serve para
+    o inspeccionar."""
+    saida = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=codec_name,channels", "-show_entries", "format=duration",
+         "-of", "default=nw=1:nk=1", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    return saida[0], int(saida[1]), float(saida[2])
 
 
 def free_udp_listener() -> socket.socket:
@@ -200,7 +214,7 @@ async def test_end_to_end_play_reaches_websocket() -> None:
 # partindo de um `pcm_u8` a 22050Hz (o caso de risco apontado no ticket).
 # ---------------------------------------------------------------------------
 
-async def test_audio_http_serves_converted_pcm16() -> None:
+async def test_audio_http_serves_converted_aac() -> None:
     manager = new_manager()
     with tempfile.TemporaryDirectory() as cache_dir:
         audio_config = {
@@ -218,13 +232,32 @@ async def test_audio_http_serves_converted_pcm16() -> None:
                 assert resp.status == 200, resp.status
                 body = await resp.read()
 
-            cached_path = (Path(cache_dir) / resource).with_suffix(".wav")
+            cached_path = (Path(cache_dir) / resource).with_suffix(".m4a")
             assert cached_path.is_file(), "conversão não ficou em cache"
-            with wave.open(str(cached_path), "rb") as wav_file:
-                assert wav_file.getsampwidth() == 2, f"esperava 16 bits, veio {wav_file.getsampwidth() * 8} bits"
-                assert wav_file.getframerate() == 44100, f"esperava 44100Hz, veio {wav_file.getframerate()}"
-                assert wav_file.getnchannels() == 1, f"esperava mono, veio {wav_file.getnchannels()} canais"
-            print(f"OK test_audio_http_serves_converted_pcm16 ({len(body)} bytes servidos)")
+            codec, canais, duracao = _probe(cached_path)
+            assert codec == "aac", f"esperava aac, veio {codec}"
+            assert canais == 1, f"esperava mono, veio {canais} canais"
+
+            # O que aqui interessa não é o formato por si: é que nada se perde
+            # pelo caminho. A duração tem de bater com a do original, senão
+            # cortou-se fala — e no jogo a fala está presa ao lip-sync.
+            _, _, duracao_origem = _probe(ASSETS_PATH / resource)
+            assert abs(duracao - duracao_origem) < 0.05, (
+                f"duração mudou: origem {duracao_origem:.3f}s, servida {duracao:.3f}s"
+            )
+
+            # E que encolheu de verdade: a webapp puxa o manifesto inteiro de
+            # uma vez, e isso passou a correr por um túnel para a internet
+            # (ver bridge/tunnel.py). Em PCM 16 bits mono a 44.1kHz seriam
+            # 88200 bytes por segundo.
+            pcm_bytes = duracao_origem * 44100 * 2
+            assert len(body) < pcm_bytes / 5, (
+                f"esperava pelo menos 5x mais pequeno que PCM16: {len(body)} vs {pcm_bytes:.0f}"
+            )
+            print(
+                f"OK test_audio_http_serves_converted_aac ({len(body)} bytes, "
+                f"{pcm_bytes / len(body):.0f}x mais pequeno que PCM16, duração igual)"
+            )
 
             mtime_before = cached_path.stat().st_mtime
             async with ClientSession() as session:
@@ -233,19 +266,21 @@ async def test_audio_http_serves_converted_pcm16() -> None:
             assert cached_path.stat().st_mtime == mtime_before, "reconverteu em vez de reusar a cache"
             print("OK test_audio_http_cache_not_repeated")
 
-            # A segunda raiz é o áudio que acompanha os vídeos do programa
-            # de TV. A resposta HTTP, e não só o ficheiro na árvore, tem de
-            # ser um WAV que o browser consiga descodificar.
+            # A segunda raiz é o áudio que acompanha os vídeos do programa de
+            # TV. O que se prova aqui é o corpo da resposta HTTP, não só o
+            # ficheiro na árvore: tem de chegar ao browser algo descodificável.
             tv_resource = "audio_for_videos/pt/attract_demo.wav"
             async with ClientSession() as session:
                 tv_resp = await session.get(f"http://127.0.0.1:{http_port}/audio/{tv_resource}")
                 assert tv_resp.status == 200, tv_resp.status
                 tv_body = await tv_resp.read()
-            with wave.open(io.BytesIO(tv_body), "rb") as wav_file:
-                assert wav_file.getsampwidth() == 2
-                assert wav_file.getframerate() == 44100
-                assert wav_file.getnchannels() == 1
-            print(f"OK test_audio_http_serves_tv_show_resource ({len(tv_body)} bytes, WAV válido)")
+            with tempfile.NamedTemporaryFile(suffix=".m4a") as servido:
+                servido.write(tv_body)
+                servido.flush()
+                codec, canais, _ = _probe(Path(servido.name))
+            assert codec == "aac", f"esperava aac no corpo servido, veio {codec}"
+            assert canais == 1, f"esperava mono, veio {canais} canais"
+            print(f"OK test_audio_http_serves_tv_show_resource ({len(tv_body)} bytes, AAC válido)")
         finally:
             await runner.cleanup()
 
@@ -462,7 +497,7 @@ async def main() -> None:
     await test_play_without_session_is_fast()
     await test_stop_without_session_is_fast()
     await test_end_to_end_play_reaches_websocket()
-    await test_audio_http_serves_converted_pcm16()
+    await test_audio_http_serves_converted_aac()
     await test_pa_mode_falls_back_without_blocking()
     await test_manifest_lists_all_game_audio_resources()
     await test_disconnect_without_hangup_resets_quadrant_via_synthetic_hungup()

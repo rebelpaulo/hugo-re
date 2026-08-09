@@ -52,6 +52,15 @@ from slot_manager import Decision, SlotManager
 
 LOGGER = logging.getLogger("bridge.web_adapter")
 
+# Tipo do áudio servido. Tem de ser posto à mão no `FileResponse`: o
+# `web.FileResponse` do aiohttp adivinha a partir de uma instância própria de
+# `mimetypes`, criada no import dele, que não vê um `mimetypes.add_type()`
+# nosso — tentei por aí primeiro e a resposta continuou a sair como
+# `application/octet-stream`. Não estraga a webapp (faz `fetch` +
+# `decodeAudioData` sobre o ArrayBuffer e nunca olha para o cabeçalho), mas um
+# `<audio src=...>` ou um proxy pelo meio podem tropeçar nisso.
+AUDIO_CONTENT_TYPE = "audio/mp4"
+
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 QR_PATH = REPO_ROOT / "game" / "resources" / "images" / "qr_lobby.png"
@@ -392,11 +401,14 @@ def _conversion_lock(app: web.Application, key: str) -> asyncio.Lock:
     return lock
 
 
-async def _convert_to_pcm16(source: Path, dest: Path) -> None:
-    """Converte para PCM 16 bits, mono, 44.1kHz — formato que qualquer browser
-    descodifica com `decodeAudioData`. Os `pcm_u8` a 22kHz do jogo original são
-    o risco (nem todo o browser os aceita); convertem-se todos por igual."""
-    tmp = dest.with_suffix(".tmp.wav")
+async def _convert_to_aac(source: Path, dest: Path) -> None:
+    """Converte para AAC/mono num contentor `.m4a` — formato que qualquer
+    browser relevante descodifica com `decodeAudioData`, a uma fracção do
+    tamanho do PCM16 que se usava antes (~10x mais pequeno, ver bridge/README).
+    Os `pcm_u8` a 22kHz do jogo original são o risco (nem todo o browser os
+    aceita); convertem-se todos por igual. 80k é sobra para voz/efeitos de um
+    jogo de 1990 — não é música de alta fidelidade."""
+    tmp = dest.with_suffix(".tmp.m4a")
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg",
         "-y",
@@ -407,7 +419,9 @@ async def _convert_to_pcm16(source: Path, dest: Path) -> None:
         "-ar",
         "44100",
         "-c:a",
-        "pcm_s16le",
+        "aac",
+        "-b:a",
+        "80k",
         str(tmp),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
@@ -422,7 +436,7 @@ async def _convert_to_pcm16(source: Path, dest: Path) -> None:
 
 
 async def audio_handler(request: web.Request) -> web.StreamResponse:
-    """`GET /audio/<recurso>` — devolve o `.wav` já convertido, convertendo-o
+    """`GET /audio/<recurso>` — devolve o `.m4a` (AAC) já convertido, convertendo-o
     (e pondo em cache) na primeira vez que é pedido."""
     resource = request.match_info["resource"]
     source_paths: tuple[Path, ...] = request.app["audio_source_paths"]
@@ -452,7 +466,7 @@ async def audio_handler(request: web.Request) -> web.StreamResponse:
     # cache — seria escrita arbitrária a partir de um pedido HTTP.
     # Derivamos o caminho da cache a partir da origem já validada, não da
     # string que o cliente enviou.
-    cached = (cache_dir / source.relative_to(source_root)).with_suffix(".wav")
+    cached = (cache_dir / source.relative_to(source_root)).with_suffix(".m4a")
     try:
         cached.resolve().relative_to(cache_dir.resolve())
     except ValueError:
@@ -461,8 +475,8 @@ async def audio_handler(request: web.Request) -> web.StreamResponse:
     async with _conversion_lock(request.app, str(source)):
         if not cached.is_file() or cached.stat().st_mtime < source.stat().st_mtime:
             cached.parent.mkdir(parents=True, exist_ok=True)
-            await _convert_to_pcm16(source, cached)
-    return web.FileResponse(cached)
+            await _convert_to_aac(source, cached)
+    return web.FileResponse(cached, headers={"Content-Type": AUDIO_CONTENT_TYPE})
 
 
 async def audio_manifest_handler(request: web.Request) -> web.StreamResponse:

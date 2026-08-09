@@ -25,6 +25,30 @@ web:
   host: 0.0.0.0
   port: 8080
 
+# Túnel para a internet (ver bridge/tunnel.py). Sem isto, quem lê o QR tem de
+# estar na mesma Wi-Fi que o Mac — o que num evento não acontece, porque as
+# pessoas estão no 4G delas.
+#
+# É um "quick tunnel" da Cloudflare: não pede conta, não pede domínio, não
+# custa nada e não mete página de aviso entre o QR e o jogo. Precisa do
+# cloudflared instalado (`brew install cloudflared`); sem ele, o arranque
+# continua e o QR aponta para a rede local, como antes.
+#
+# O endereço muda a cada arranque. No ecrã isso é indiferente (o QR é gerado
+# de novo em cada arranque), mas se o bridge reiniciar a meio do evento, quem
+# já estava ligado tem de voltar a ler o QR. Quem quiser endereço fixo precisa
+# de um túnel nomeado, e esse precisa de um domínio na conta Cloudflare.
+tunnel:
+  enabled: true
+  # Quanto tempo se espera, no total, que o endereço fique acessível de fora.
+  timeout_seconds: 60
+  # Silêncio antes da primeira pergunta pelo endereço novo. NÃO baixar sem ler
+  # o comentário em tunnel.py: perguntar cedo de mais fixa um "não existe" no
+  # resolvedor e o arranque fica preso a essa resposta. Medido nesta máquina —
+  # a insistir desde o segundo zero, 20s não chegaram; a esperar calado, o
+  # nome resolveu à primeira.
+  dns_grace_seconds: 20
+
 bridge:
   # Número de quadrantes/jogadores simultâneos do jogo.
   slots: 4
