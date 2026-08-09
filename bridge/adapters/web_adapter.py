@@ -292,8 +292,19 @@ async def audio_handler(request: web.Request) -> web.StreamResponse:
     if not source.is_file():
         raise web.HTTPNotFound()
 
-    cached = (cache_dir / resource).with_suffix(".wav")
-    async with _conversion_lock(request.app, resource):
+    # O destino da cache também tem de ser validado, não só a origem. Um
+    # recurso com `..` pode resolver para uma origem legítima dentro de
+    # assets_path e ainda assim apontar o ficheiro convertido para fora da
+    # cache — seria escrita arbitrária a partir de um pedido HTTP.
+    # Derivamos o caminho da cache a partir da origem já validada, não da
+    # string que o cliente enviou.
+    cached = (cache_dir / source.relative_to(assets_path)).with_suffix(".wav")
+    try:
+        cached.resolve().relative_to(cache_dir.resolve())
+    except ValueError:
+        raise web.HTTPForbidden()
+
+    async with _conversion_lock(request.app, str(source)):
         if not cached.is_file() or cached.stat().st_mtime < source.stat().st_mtime:
             cached.parent.mkdir(parents=True, exist_ok=True)
             await _convert_to_pcm16(source, cached)
