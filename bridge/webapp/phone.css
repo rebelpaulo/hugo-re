@@ -234,6 +234,7 @@ html, body {
 /* ---------- Telefone / teclado ---------- */
 
 .phone-body {
+  position: relative;   /* âncora para a camada de desfoque e o auscultador centrado */
   width: 100%;
   max-width: 420px;
   height: 100%;
@@ -242,6 +243,30 @@ html, body {
   gap: 14px;
   padding-top: 4px;
 }
+
+/* ---------- Camada de desfoque antes de atender ---------- */
+/* Cobre o LCD e o teclado (nada disso serve para nada antes de atender) para
+   que o auscultador ao centro seja a única coisa que salta à vista.
+   backdrop-filter: blur() é suportado no Chrome Android desde a v76 (2019),
+   por isso funciona no telemóvel-alvo — mas o rgba() de fundo por baixo é
+   sempre aplicado, com ou sem suporte a backdrop-filter, e sozinho já
+   escurece e esconde os detalhes do teclado. É a rede de segurança: em vez
+   de um ecrã por desfocar num browser mais velho, fica um ecrã escurecido —
+   pior visualmente, nunca ilegível. */
+.pre-answer-blur {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(14,13,10,0.55);
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
+}
+/* CRÍTICO — mesma lição do splash (ver acima): ao atender isto tem de SAIR
+   do layout, não só ficar transparente/invisível, senão continua a comer
+   todos os toques do teclado por trás. `hidden` chega aqui porque não há
+   nenhuma regra de `display` a competir com o `[hidden]{display:none}` do
+   browser para esta classe. */
+.pre-answer-blur[hidden] { display: none; }
 
 .top-row {
   display: flex;
@@ -277,43 +302,58 @@ html, body {
 
 /* O auscultador é o botão de começar (ver phone.js/attract.py no jogo) — quem
    ainda não entrou tem de o identificar num relance, no escuro, sem
-   instruções. Por isso, enquanto não se está em chamada, é a peça com mais
-   presença do ecrã: largo, dourado, com halo a pulsar, e rótulo "ATENDER" —
-   o ícone sozinho é o que o cliente não reconheceu. Em chamada o mesmo botão
-   vira "DESLIGAR" e recolhe para um cantinho discreto, porque aí a atenção
-   passa a ser o teclado. */
+   instruções. Por isso, enquanto não se está em chamada, é a ÚNICA coisa
+   acionável do ecrã: um "telefone" redondo e dourado ao centro, por cima da
+   camada de desfoque (.pre-answer-blur acima), com halo a pulsar e rótulo
+   "ATENDER" — o ícone sozinho é o que o cliente não reconheceu. Em chamada o
+   mesmo botão vira "DESLIGAR", volta ao fluxo normal do ecrã e recolhe para
+   um cantinho discreto, porque aí a atenção passa a ser o teclado. */
 .handset {
-  align-self: stretch;   /* ecrã ainda não entrou: largura toda, é a ação principal */
-  min-height: 64px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;   /* por cima de .pre-answer-blur (z-index 5) */
+  width: 42vw;
+  height: 42vw;
+  max-width: 190px;
+  max-height: 190px;
   border: none;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #e8b93f 0%, #c4901f 100%);
-  box-shadow: 0 4px 0 #8a6412, 0 8px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
-  display: flex; align-items: center; justify-content: center; gap: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #f3d372 0%, #e8b93f 45%, #c4901f 100%);
+  box-shadow: 0 6px 0 #8a6412, 0 14px 30px rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.45);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   animation: handset-pulse 1.8s ease-in-out infinite;
-  transition: min-height 160ms ease-out, border-radius 160ms ease-out, background 160ms ease-out, box-shadow 160ms ease-out;
+  transition: all 160ms ease-out;
 }
 @keyframes handset-pulse {
-  0%, 100% { box-shadow: 0 4px 0 #8a6412, 0 8px 16px rgba(0,0,0,0.35), 0 0 0 rgba(232,185,63,0.6), inset 0 1px 0 rgba(255,255,255,0.4); }
-  50% { box-shadow: 0 4px 0 #8a6412, 0 8px 16px rgba(0,0,0,0.35), 0 0 22px 6px rgba(232,185,63,0.6), inset 0 1px 0 rgba(255,255,255,0.4); }
+  0%, 100% { box-shadow: 0 6px 0 #8a6412, 0 14px 30px rgba(0,0,0,0.5), 0 0 0 rgba(232,185,63,0.6), inset 0 2px 0 rgba(255,255,255,0.45); }
+  50% { box-shadow: 0 6px 0 #8a6412, 0 14px 30px rgba(0,0,0,0.5), 0 0 32px 10px rgba(232,185,63,0.6), inset 0 2px 0 rgba(255,255,255,0.45); }
 }
-/* Em chamada: já não é preciso ocupar o ecrã — recolhe para um botão
-   discreto encostado ao canto direito, como o corpo de um telefone a
-   sério, e a atenção passa para o teclado por baixo. */
+/* Em chamada: já não é preciso ocupar o centro do ecrã — volta ao fluxo
+   normal (mesma posição no HTML, entre o top-row e o LCD) e recolhe para um
+   botão discreto encostado ao canto direito, como o corpo de um telefone a
+   sério, com a atenção a passar para o teclado por baixo. */
 .handset.off-hook {
+  position: static;
+  transform: none;
   align-self: flex-end;
+  width: auto;
+  height: auto;
   min-height: 44px;
   padding: 0 16px;
   border-radius: 12px;
+  flex-direction: row;
   background: linear-gradient(180deg, #d4634a 0%, #b13f28 100%);
   box-shadow: 0 3px 0 #7a2416, inset 0 1px 0 rgba(255,255,255,0.35);
   animation: none;
 }
-.handset:active { transform: translateY(2px); }
-.handset-icon { width: 30px; height: 15px; fill: #4a3410; flex-shrink: 0; }
-.handset.off-hook .handset-icon { fill: #fff2ea; transform: rotate(135deg); }
+.handset:active { transform: translate(-50%, -50%) scale(0.96); }
+.handset.off-hook:active { transform: translateY(2px); }
+.handset-icon { width: 40px; height: 20px; fill: #4a3410; flex-shrink: 0; }
+.handset.off-hook .handset-icon { width: 30px; height: 15px; fill: #fff2ea; transform: rotate(135deg); }
 .handset-label {
-  font-size: 4.6vw;
+  font-size: 5.2vw;
   font-weight: 800;
   letter-spacing: 1px;
   color: #4a3410;

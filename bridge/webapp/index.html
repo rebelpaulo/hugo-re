@@ -79,18 +79,6 @@
         </div>
       </div>
 
-      <!-- O auscultador é o botão de começar (é o offhook que tira o jogo do
-           attract — ver game/tv_show/attract.py). Enquanto não se está em
-           chamada é a ação principal do ecrã, por isso larga e com rótulo;
-           depois de atender vira o botão de desligar e recolhe para um
-           cantinho, porque a atenção passa a ser o teclado (ver phone.css/js). -->
-      <button class="handset" id="handset-btn" type="button" aria-label="Atender e começar a jogar">
-        <svg viewBox="0 0 64 32" class="handset-icon" id="handset-icon">
-          <path d="M4 6 C4 2 8 0 12 2 L20 10 C22 12 22 15 20 17 L17 20 C22 26 27 29 33 27 L36 24 C38 22 41 22 43 24 L51 32 C53 34 51 38 47 38 L60 26 C47 12 34 4 4 6 Z" />
-        </svg>
-        <span class="handset-label" id="handset-label">ATENDER</span>
-      </button>
-
       <div class="lcd" id="phone-lcd">
         <div class="lcd-line" id="lcd-status">PRONTO</div>
         <div class="lcd-line lcd-digits" id="lcd-digits">&nbsp;</div>
@@ -110,6 +98,27 @@
         <button class="key" data-key="0" type="button"><span class="key-num">0</span></button>
         <button class="key key-hash" data-key="#" type="button"><span class="key-num">#</span></button>
       </div>
+
+      <!-- Camada de desfoque antes de atender: cobre o LCD e o teclado (que
+           ainda não servem para nada) para que a única coisa acionável no
+           ecrã seja o auscultador ao centro. CRÍTICO (já foi um P0 aqui,
+           ver phone.css): ao atender, este `hidden` tem de SAIR do layout,
+           não só ficar transparente — senão fica a comer os toques do
+           teclado por trás. Ver toggle em phone.js junto do handset. -->
+      <div class="pre-answer-blur" id="pre-answer-blur" aria-hidden="true"></div>
+
+      <!-- O auscultador é o botão de começar (é o offhook que tira o jogo do
+           attract — ver game/tv_show/attract.py). Enquanto não se está em
+           chamada é a única ação possível no ecrã, por isso fica ao centro,
+           grande, sobre a camada de desfoque acima; depois de atender vira o
+           botão de desligar e recolhe para um cantinho, porque a atenção
+           passa a ser o teclado (ver phone.css/js). -->
+      <button class="handset" id="handset-btn" type="button" aria-label="Atender e começar a jogar">
+        <svg viewBox="0 0 64 32" class="handset-icon" id="handset-icon">
+          <path d="M4 6 C4 2 8 0 12 2 L20 10 C22 12 22 15 20 17 L17 20 C22 26 27 29 33 27 L36 24 C38 22 41 22 43 24 L51 32 C53 34 51 38 47 38 L60 26 C47 12 34 4 4 6 Z" />
+        </svg>
+        <span class="handset-label" id="handset-label">ATENDER</span>
+      </button>
 
     </div>
   </section>

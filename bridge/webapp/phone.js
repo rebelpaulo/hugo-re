@@ -193,6 +193,18 @@
     document.getElementById("color-name").textContent = COLOR_NAME_PT[color] || color;
     document.getElementById("lcd-status").textContent = "PRONTO";
     document.getElementById("lcd-digits").innerHTML = "&nbsp;";
+    // Repõe sempre o estado "por atender": um "slot" é sempre uma sessão
+    // nova aos olhos do servidor (offhook implícito a false), mas o var
+    // `offHook` local e as classes do auscultador só mudam por clique — sem
+    // isto, uma reconexão (released -> novo slot) herdava o estado antigo e
+    // o desfoque ficava escondido para sempre, com o teclado destapado sem
+    // ninguém ter atendido.
+    offHook = false;
+    var handsetBtn = document.getElementById("handset-btn");
+    handsetBtn.classList.remove("off-hook");
+    handsetBtn.setAttribute("aria-label", "Atender e começar a jogar");
+    handsetLabelEl.textContent = "ATENDER";
+    preAnswerBlur.hidden = false;
     showScreen("phone");
   }
 
@@ -321,12 +333,17 @@
   // ---------------- UI: auscultador ----------------
 
   var handsetLabelEl = document.getElementById("handset-label");
+  var preAnswerBlur = document.getElementById("pre-answer-blur");
   document.getElementById("handset-btn").addEventListener("click", function () {
     offHook = !offHook;
     vibrate(30);
     this.classList.toggle("off-hook", offHook);
     this.setAttribute("aria-label", offHook ? "Desligar" : "Atender e começar a jogar");
     handsetLabelEl.textContent = offHook ? "DESLIGAR" : "ATENDER";
+    // CRÍTICO: `hidden` (não só opacidade) para o desfoque sair mesmo do
+    // layout e deixar de comer toques do teclado — ver comentário em
+    // phone.css junto de .pre-answer-blur.
+    preAnswerBlur.hidden = offHook;
     send({ type: offHook ? "offhook" : "hangup" });
     document.getElementById("lcd-status").textContent = offHook ? "EM CHAMADA" : "PRONTO";
   });
