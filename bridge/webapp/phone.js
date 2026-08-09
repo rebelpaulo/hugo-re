@@ -16,7 +16,7 @@
   var COLOR_NAME_PT = { blue: "azul", green: "verde", red: "vermelho", white: "branco" };
 
   var screens = {};
-  ["sip", "connecting", "queue", "turn", "phone", "name", "top10"].forEach(function (id) {
+  ["sip", "connecting", "queue", "turn", "phone", "name", "top10", "bye"].forEach(function (id) {
     screens[id] = document.getElementById("screen-" + id);
   });
 
@@ -486,39 +486,64 @@
   var handsetLabelEl = document.getElementById("handset-label");
   var preAnswerBlur = document.getElementById("pre-answer-blur");
   document.getElementById("handset-btn").addEventListener("click", function () {
-    offHook = !offHook;
+    if (offHook) {
+      // Desligar: quem sai não volta sem ler o QR outra vez. Fecha a
+      // ligação (mesmo padrão do "sair da fila" acima) para o servidor
+      // nunca poder mandar nada que reabra o ecrã de atender — o botão
+      // ATENDER fica no ecrã "phone", que passa a inativo, e não há
+      // caminho de volta a partir do ecrã de despedida.
+      offHook = false;
+      vibrate(30);
+      send({ type: "hangup" });
+      wantConnected = false;
+      clearTimeout(reconnectTimer);
+      clearInterval(turnCountdownTimer);
+      if (ws) { try { ws.close(); } catch (e) { /* já fechado */ } }
+      showScreen("bye");
+      // O jogo já não conduz o áudio (desligámos) — volta a tocar o genérico
+      // no ecrã de despedida, como fecho. O áudio já está desbloqueado a esta
+      // altura (a pessoa jogou), portanto isto toca mesmo.
+      safeAudio("genérico na despedida", function () {
+        if (window.HugoAudio) window.HugoAudio.requestIntro();
+      });
+      return;
+    }
+    // Atender: começa a chamada, o jogo assume o áudio a partir daqui.
+    offHook = true;
     vibrate(30);
-    this.classList.toggle("off-hook", offHook);
-    this.setAttribute("aria-label", offHook ? "Desligar" : "Atender e começar a jogar");
-    handsetLabelEl.textContent = offHook ? "DESLIGAR" : "ATENDER";
+    this.classList.add("off-hook");
+    this.setAttribute("aria-label", "Desligar");
+    handsetLabelEl.textContent = "DESLIGAR";
     // CRÍTICO: `hidden` (não só opacidade) para o desfoque sair mesmo do
     // layout e deixar de comer toques do teclado — ver comentário em
     // phone.css junto de .pre-answer-blur.
-    preAnswerBlur.hidden = offHook;
-    send({ type: offHook ? "offhook" : "hangup" });
-    document.getElementById("lcd-status").textContent = offHook ? "EM CHAMADA" : "PRONTO";
+    preAnswerBlur.hidden = true;
+    send({ type: "offhook" });
+    document.getElementById("lcd-status").textContent = "EM CHAMADA";
   });
 
   // ---------------- Splash ----------------
   //
-  // 1,8s fixos e sai, nunca à espera do WebSocket — numa rede de evento lenta
-  // ninguém deve ficar a olhar para um ecrã parado sem perceber porquê. A
-  // ligação (connectWS, abaixo) continua a fazer-se por trás.
+  // Espera pelo primeiro toque — o AudioContext só desbloqueia dentro de um
+  // gesto real do utilizador (regra do browser, inultrapassável), por isso
+  // já não há saída automática por tempo: sem toque, não há som, e o cliente
+  // ficava a ouvir tudo em silêncio até mexer. O toque faz, por esta ordem:
+  // desbloqueia o áudio, esconde a splash (mesmo crossfade de sempre) e
+  // arranca o genérico local, que fica a tocar em loop no ecrã de atender
+  // até o jogador carregar em ATENDER/5 (aí `stopIntro` cala-o — ver
+  // game-audio.js). A ligação (connectWS, abaixo) continua a fazer-se por
+  // trás, sem depender disto.
 
-  var SPLASH_MS = 1800;
   var SPLASH_FADE_MS = 350;
   var splashEl = document.getElementById("splash");
-  setTimeout(function () {
+  splashEl.addEventListener("pointerdown", function () {
+    unlockAudioOnce();
     splashEl.classList.add("hide");
     setTimeout(function () { splashEl.hidden = true; }, SPLASH_FADE_MS);
-    // Acaba o silêncio até à próxima volta do loop de attract (16,4s): a
-    // intro começa a tocar localmente já aqui. Se o AudioContext ainda não
-    // estiver desbloqueado (sem gesto do utilizador), fica à espera em
-    // silêncio dentro do próprio game-audio.js — nunca um erro por isto.
     safeAudio("intro attract", function () {
       if (window.HugoAudio) window.HugoAudio.requestIntro();
     });
-  }, SPLASH_MS);
+  }, { once: true, passive: true });
 
   // ---------------- Arranque ----------------
   //

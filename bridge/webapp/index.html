@@ -15,12 +15,13 @@
 </head>
 <body>
 
-<!-- Splash — primeiro ecrã, antes de qualquer ligação. Sai sozinha ao fim de
-     1,8s fixos (ver phone.js), nunca à espera do WebSocket: numa rede de
-     evento lenta ninguém deve ficar a olhar para um ecrã parado sem saber
-     porquê. A ligação continua a fazer-se por trás. -->
+<!-- Splash — primeiro ecrã, antes de qualquer ligação. Espera pelo primeiro
+     toque (ver phone.js): o AudioContext só desbloqueia dentro de um gesto
+     real do utilizador, por isso já não há saída automática por tempo. A
+     ligação (WebSocket) continua a fazer-se por trás, sem depender disto. -->
 <div class="splash" id="splash" aria-hidden="true">
   <img class="splash-logo" src="img/logo.png" alt="">
+  <p class="splash-tap-line lcd-blink">TOCA PARA LIGAR</p>
 </div>
 
 <div class="stage">
@@ -143,6 +144,19 @@
     </div>
     <ol class="top10-list" id="top10-list"></ol>
     <p class="top10-note">Para voltar a jogar, lê o QR outra vez e entra na fila.</p>
+  </section>
+
+  <!-- 8. Despedida — desligar manual (auscultador enquanto offHook, ver
+       phone.js). Ecrã final igual em espírito ao top10: sem botão de
+       voltar, sem ATENDER, sem forma de reentrar — para jogar outra vez é
+       preciso ler o QR outra vez. NÃO é o mesmo caminho que o fim natural
+       do jogo (finished -> screen-name -> screen-top10), que se mantém
+       como está. -->
+  <section id="screen-bye" class="screen">
+    <div class="bye-box">
+      <img class="bye-logo" src="img/logo.png" alt="">
+      <p class="bye-text">ATÉ À PRÓXIMA!</p>
+    </div>
   </section>
 
 </div>
