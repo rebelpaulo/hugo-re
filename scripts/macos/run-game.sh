@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Arranca o jogo com o cwd correto (game/) e a pasta de dados (BigFile) por
+# $HUGO_ASSETS ou 1º argumento.
+#
+# NOTA sobre o cwd: game/resource.py e a maior parte do jogo carregam
+# recursos com caminhos relativos tipo "resources/images/...", o que só
+# resolve com cwd = game/. É esse o cwd usado aqui.
+#
+# Achado (documentado, não corrigido — está fora do WRITE SET):
+# game/tv_show/tv_show_resources.py:30-31 monta dois prefixos diferentes:
+#   prefix       = "resources/videos/{country}/"       -> resolve com cwd=game/
+#   audio_prefix = "audio_for_videos/{country}/"        -> NÃO resolve com cwd=game/
+# porque o áudio dos vídeos vive em game/resources/audio_for_videos/, e ao
+# audio_prefix falta o "resources/" que o prefix dos vídeos tem. Confirmado
+# empiricamente (ver scripts/macos/README.md). Isto é um bug do upstream em
+# game/, que não foi tocado por este ticket — o efeito prático é que o som
+# dos vídeos do tv_show (attract, initial, press_5, going_scylla, ending,
+# have_luck) não vai tocar, mesmo com cwd correto.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VENV_PY="$REPO_ROOT/.venv/bin/python3"
+GAME_DIR="$REPO_ROOT/game"
+
+ASSETS="${1:-${HUGO_ASSETS:-}}"
+
+if [ -z "$ASSETS" ]; then
+  echo "ERRO: falta a pasta de dados (a 'BigFile' da gold version)." >&2
+  echo "Usa: scripts/macos/run-game.sh /caminho/para/BigFile" >&2
+  echo "ou:  export HUGO_ASSETS=/caminho/para/BigFile && scripts/macos/run-game.sh" >&2
+  exit 1
+fi
+
+if [ ! -d "$ASSETS" ]; then
+  echo "ERRO: a pasta de dados indicada não existe: $ASSETS" >&2
+  echo "Confirma o caminho da BigFile (ainda pode não ter sido descarregada)." >&2
+  exit 1
+fi
+
+if [ ! -x "$VENV_PY" ]; then
+  echo "ERRO: não encontrei o .venv em $REPO_ROOT/.venv." >&2
+  echo "Corre primeiro: scripts/macos/setup.sh" >&2
+  exit 1
+fi
+
+echo "== run-game.sh: a arrancar o jogo =="
+echo "   cwd:   $GAME_DIR"
+echo "   dados: $ASSETS"
+
+cd "$GAME_DIR"
+exec "$VENV_PY" game.py "$ASSETS"

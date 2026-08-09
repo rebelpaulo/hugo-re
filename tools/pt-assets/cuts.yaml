@@ -1,0 +1,79 @@
+# Timecodes reais, tirados do master `pt-master.mkv` (24m25s, episódio completo
+# com 6 finalistas: Paulo, Ana Catarina, Tiago, Marco, Miguel Ângelo, David).
+# Cada corte foi localizado pelas legendas automáticas (timestamps por palavra),
+# confirmado a ver os frames à volta do corte e a forma de onda do áudio.
+# A frase transcrita em comentário é a que se ouve DENTRO do trecho escolhido.
+# Ver o relatório da tarefa para o nível de confiança de cada clip.
+
+source: ../../../hugo-assets/pt-master.mkv
+output_video: ../../game/resources/videos/pt
+output_audio: ../../game/resources/audio_for_videos/pt
+
+clips:
+  # ATENÇÃO (confiança baixa, ver relatório): não há no master nenhum momento
+  # de "convite a ligar para o programa" (procurei "ligar/telefone/chama/número"
+  # nas legendas, só aparece uma vez, fora de contexto). O único trecho genérico,
+  # sem nome de finalista, é a abertura do programa: telefone vermelho a tocar +
+  # zoom em túnel psicadélico + logótipo "Hugo". É uma animação contínua de
+  # sentido único (não repete), por isso um loop feito por corte fica sempre
+  # com um salto ao reiniciar — escolhi o troço que fica mais neutro nas duas
+  # pontas (começa a preto, acaba a meio do túnel, antes do logótipo "Hugo" e
+  # antes de cortar para o apresentador). Sem fala; só música/efeitos.
+  - name: attract_demo
+    start: "00:00:00.000"
+    end:   "00:00:16.680"
+    loop: true
+
+  # Confiança alta. Saudação do apresentador ao finalista Marco, mesmo depois
+  # do corte de câmara da mascote Hugo para o apresentador em estúdio.
+  # Fala: «Metade dos finalistas, agora vai jogar o Marco. Olá, estás bom?
+  # Estou, tudo bem, Marco? Sim.»
+  # Nota: usa o nome "Marco" — o master não tem nenhuma saudação genérica
+  # sem nome de finalista.
+  - name: hello_hello
+    start: "00:11:43.800"
+    end:   "00:11:50.100"
+    loop: false
+
+  # Confiança alta. Instrução para carregar na tecla 5, ainda no plano fixo
+  # do apresentador (mesmo plano de hello_hello, é a continuação da mesma
+  # conversa com o Marco).
+  # Fala: «Isso mesmo! E para passares de nível é nove, é exatamente isso!
+  # Agora, carrega aí na cinco e vais até à montanha.»
+  - name: press_5
+    start: "00:11:58.320"
+    end:   "00:12:05.550"
+    loop: false
+
+  # Confiança média. «Boa sorte» dito a seguir ao press_5 (mesma frase,
+  # mesmo plano), antes do corte para o ecrã do jogo. Mais curto que a
+  # duração de referência (2,41 s) — é mesmo só as duas palavras, sem mais
+  # texto à volta nesta zona do master.
+  # Fala: «Boa sorte.»
+  - name: have_luck
+    start: "00:12:05.550"
+    end:   "00:12:07.100"
+    loop: false
+
+  # Confiança alta. Transição para a caverna, dita pelo apresentador a
+  # fechar o marcador do Marco, plano fixo, frase completa.
+  # Fala: «Marco, como tu sabes, vamos já já à caverna das caveiras, tá bem?»
+  - name: scylla_cave
+    start: "00:14:31.120"
+    end:   "00:14:34.850"
+    loop: false
+
+  # Confiança média (ver relatório: duração muito abaixo da referência de
+  # 17,17 s). Despedida do apresentador depois da caverna — a bruxa
+  # enfeitiça a corda e o Marco não salva a família completamente ("não te
+  # preocupes que tu já vais ganhar um prémio" é uma fala de consolação,
+  # não de vitória), por isso é o desfecho mais próximo de "derrota" que
+  # encontrei com corte limpo. É o plano inteiro do apresentador depois do
+  # corte da animação da caverna e antes do corte para a mascote Hugo do
+  # finalista seguinte — não há mais texto para esticar sem sair do plano.
+  # Fala: «...pois é, a Amaro que malvada faz destas coisas, mas não te
+  # preocupes que tu já vais ganhar um prémio. Tchau, fica bem, tchau.»
+  - name: you_lost
+    start: "00:15:08.350"
+    end:   "00:15:14.150"
+    loop: false
