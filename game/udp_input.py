@@ -8,10 +8,15 @@ aviso raro no arranque/porta ocupada), nunca derruba o jogo.
 
 Protocolo (JSON, um pacote UDP por evento):
     {"player": 0..3, "event": "press_5"}
-    {"type": "slots", "occupied": [0, 2], "queue_len": 5}
+    {"type": "slots", "occupied": [0, 2], "queue_len": 5, "mode": "web"}
 
 "event" tem de ser um campo booleano válido de PhoneEvents (ver
 phone_events.py): offhook, hungup, press_0..press_9, press_star, press_pound.
+
+"mode" é o input_mode de produção (ver bridge/config.yaml): "web" ou "sip",
+usado por invite_overlay.py para saber que convite desenhar num quadrante
+vazio. Campo opcional e retrocompatível — sem ele (bridge antigo, ou nenhuma
+mensagem "slots" ainda recebida), assume-se "web".
 """
 import json
 import logging
@@ -23,6 +28,10 @@ from phone_events import PhoneEvents
 # Campos aceites em PhoneEvents — construído a partir da dataclass para nunca
 # divergir do contrato real.
 _VALID_EVENTS = set(PhoneEvents.__dataclass_fields__.keys())
+
+# input_mode de produção (ver bridge/config.yaml) — só estas duas strings.
+_VALID_MODES = frozenset({"web", "sip"})
+DEFAULT_MODE = "web"
 
 MAX_PACKET_SIZE = 4096
 MAX_PENDING_EVENTS = 1024
@@ -90,6 +99,11 @@ class UdpInput:
         if msg.get("type") == "slots":
             occupied = msg.get("occupied")
             queue_len = msg.get("queue_len")
+            # Ausente -> "web" (retrocompatível com um bridge antigo, que
+            # nunca mandava este campo). Presente mas inválido reprova a
+            # mensagem inteira, tal como occupied/queue_len já fazem — nunca
+            # um tipo à parte (bool incluído) nem uma string desconhecida.
+            mode = msg.get("mode", DEFAULT_MODE)
             if (
                 not isinstance(occupied, list)
                 or any(
@@ -102,10 +116,12 @@ class UdpInput:
                 or not isinstance(queue_len, int)
                 or isinstance(queue_len, bool)
                 or queue_len < 0
+                or not isinstance(mode, str)
+                or mode not in _VALID_MODES
             ):
                 return
             with self._lock:
-                self.last_slots = {"occupied": occupied, "queue_len": queue_len}
+                self.last_slots = {"occupied": occupied, "queue_len": queue_len, "mode": mode}
             return
 
         player = msg.get("player")
@@ -131,9 +147,9 @@ class UdpInput:
             self._pending.append((player, event))
 
     def get_slots(self):
-        """Devolve uma cópia do último {"occupied": [...], "queue_len": N}
-        recebido, ou None se ainda não chegou nenhuma mensagem 'slots' (por
-        exemplo, a bridge não está a correr)."""
+        """Devolve uma cópia do último {"occupied": [...], "queue_len": N,
+        "mode": "web"|"sip"} recebido, ou None se ainda não chegou nenhuma
+        mensagem 'slots' (por exemplo, a bridge não está a correr)."""
         with self._lock:
             return dict(self.last_slots) if self.last_slots is not None else None
 

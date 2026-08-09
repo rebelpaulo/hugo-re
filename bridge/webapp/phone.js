@@ -1,8 +1,10 @@
 // phone.js — estado do telefone web: WebSocket com reconexão, fila, oferta de
 // vez e teclado. Protocolo fixo (ver bridge/adapters/web_adapter.py). O modo
-// de entrada (web/sip/both) é decisão da produção em bridge/config.yaml — o
-// servidor manda-o logo na ligação, mensagem {"type":"config",...}; a webapp
-// já não pergunta nada ao utilizador.
+// de entrada (web/sip) é decisão da produção em bridge/config.yaml, e os dois
+// usos nunca se cruzam no mesmo evento — o servidor manda o modo logo na
+// ligação, mensagem {"type":"config",...}; a webapp já não pergunta nada ao
+// utilizador. Em modo sip a webapp não é usada de todo (não há QR no ecrã
+// grande); se alguém lá chegar à mesma, mostra-se só um aviso curto.
 
 (function () {
   "use strict";
@@ -14,13 +16,11 @@
   var COLOR_NAME_PT = { blue: "azul", green: "verde", red: "vermelho", white: "branco" };
 
   var screens = {};
-  ["signage", "connecting", "queue", "turn", "phone"].forEach(function (id) {
+  ["sip", "connecting", "queue", "turn", "phone"].forEach(function (id) {
     screens[id] = document.getElementById("screen-" + id);
   });
 
   var reconnectDot = document.getElementById("reconnect-dot");
-  var signageBackBtn = document.getElementById("btn-signage-back");
-  var signageLinks = document.querySelectorAll(".signage-link");
 
   var ws = null;
   var wantConnected = false;
@@ -30,9 +30,7 @@
   var turnCountdownTimer = null;
   var offHook = false;
 
-  var currentMode = null;         // "web" | "sip" | "both", vindo do servidor
   var activeScreen = "connecting";
-  var preSignageScreen = "connecting"; // ecrã a que "← voltar" da sinalética regressa
 
   function showScreen(id) {
     activeScreen = id;
@@ -131,37 +129,21 @@
 
   // ---------------- Modo (decisão da produção, não do utilizador) ----------------
 
-  function updateSignageLinksVisibility() {
-    var show = currentMode === "both";
-    signageLinks.forEach(function (el) { el.hidden = !show; });
-  }
-
   function applyMode(mode) {
-    currentMode = mode;
     if (mode === "sip") {
-      // Só sinalética: nunca entra na fila nem ocupa lugar.
+      // Este evento é só telefones físicos da sala — nunca entra na fila
+      // nem ocupa lugar. Não devia haver forma normal de chegar aqui (sem
+      // QR no ecrã grande), mas se acontecer (URL de outro evento), fica
+      // só o aviso, nunca um ecrã em branco.
       wantConnected = false;
       clearTimeout(reconnectTimer);
       if (ws) { try { ws.close(); } catch (e) { /* já fechado */ } }
-      signageBackBtn.hidden = true; // não há outro ecrã para onde voltar
-      preSignageScreen = "connecting";
-      showScreen("signage");
+      showScreen("sip");
       return;
     }
-    // web ou both: entra direto na fila/teclado, sem perguntar nada.
-    signageBackBtn.hidden = false;
-    updateSignageLinksVisibility();
+    // web: entra direto na fila/teclado, sem perguntar nada.
     send({ type: "hello", mode: "web" });
   }
-
-  function goToSignage() {
-    preSignageScreen = activeScreen;
-    showScreen("signage");
-  }
-  signageLinks.forEach(function (el) { el.addEventListener("click", goToSignage); });
-  signageBackBtn.addEventListener("click", function () {
-    showScreen(preSignageScreen);
-  });
 
   // ---------------- Mensagens do servidor ----------------
 
@@ -255,12 +237,7 @@
     wantConnected = false;
     clearTimeout(reconnectTimer);
     if (ws) ws.close();
-    if (currentMode === "both") {
-      preSignageScreen = "connecting";
-      showScreen("signage");
-    } else {
-      showScreen("connecting");
-    }
+    showScreen("connecting");
   });
 
   // ---------------- UI: confirmar vez ----------------
@@ -305,7 +282,7 @@
   //
   // Sem seletor: liga-se logo ao carregar a página. O ecrã "a ligar" já está
   // ativo por omissão no HTML; assim que chegar a mensagem "config" do
-  // servidor é que se decide fila/teclado (web/both) ou sinalética (sip).
+  // servidor é que se decide fila/teclado (web) ou o aviso curto (sip).
 
   wantConnected = true;
   connectWS();

@@ -25,27 +25,30 @@ o jogo continua sempre em `127.0.0.1`, nunca muda.
 ## `input_mode` — como é que as pessoas entram no jogo
 
 Decisão da produção, em `config.yaml`, ligada **antes do evento** consoante o que está
-montado na sala — não é escolha do público, e a webapp já não pergunta nada a quem lê o
-QR. Mudar aqui e reiniciar o bridge é tudo o que é preciso; não é preciso mexer em código.
+montado na sala — nunca escolha do público, e os dois usos nunca se cruzam no mesmo
+evento: ou é todo com a webapp, ou é todo com telefones físicos. Mudar aqui e reiniciar o
+bridge é tudo o que é preciso; não é preciso mexer em código.
 
 ```yaml
-input_mode: web   # web | sip | both
+input_mode: web   # web | sip
 ```
 
 - `web` — só webapp. Quem lê o QR cai **direto** no teclado ou na fila, sem nenhum ecrã de
   escolha pelo meio.
-- `sip` — só telefones físicos. Quem lê o QR vê **apenas a sinalética** (que telefone
-  pegar, o que fazer) — não entra na fila nem ocupa lugar.
-- `both` — as duas vias activas ao mesmo tempo. Quem lê o QR entra pela webapp (é o que o
-  QR promete); a sinalética para quem preferir um telefone físico fica acessível num link
-  discreto dentro da webapp (ecrãs "a ligar" e "fila"), nunca como pergunta à entrada.
+- `sip` — só telefones físicos da sala. Não há QR nenhum no ecrã grande neste modo, logo
+  ninguém devia sequer chegar à webapp; se alguém lá chegar à mesma (URL guardado de um
+  evento anterior), vê só um aviso curto a dizer que hoje é por telefone.
 
-Valor ausente ou inválido em `config.yaml` cai em `web` (o modo mais restrito para o
-público) e fica registado no log — ver `load_input_mode()` em `adapters/web_adapter.py`.
+Valor ausente ou inválido em `config.yaml` (incluindo o antigo `both`, que deixou de
+existir) cai em `web` (o modo mais restrito para o público) e fica registado no log — ver
+`load_input_mode()` em `adapters/web_adapter.py`.
 
 O servidor manda o modo à webapp logo que o WebSocket liga, antes de qualquer outra coisa
 (mensagem nova `{"type":"config","input_mode":"web"}`, ver secção do adaptador web abaixo)
-— é assim que a webapp sabe que ecrã mostrar sem ter de perguntar.
+— é assim que a webapp sabe se deve entrar na fila/teclado ou mostrar o aviso de sip, sem
+ter de perguntar. O jogo também recebe o modo, na mensagem `slots` já enviada por UDP (ver
+"Contrato UDP" abaixo) — é o que `game/invite_overlay.py` usa para desenhar o convite certo
+num quadrante vazio: com QR em modo `web`, sem QR em modo `sip`.
 
 ## Arranque e configuração
 
@@ -95,11 +98,22 @@ São enviados datagramas JSON fire-and-forget para `127.0.0.1:9100` por omissão
 
 ```json
 {"player":0,"event":"press_5"}
-{"type":"slots","occupied":[0,2],"queue_len":5}
+{"type":"slots","occupied":[0,2],"queue_len":5,"mode":"web"}
 ```
 
 Uma falha de socket ou dados inválidos são registados, e os métodos do emissor devolvem
 `False`; nunca propagam a excepção ao bridge.
+
+O campo `"mode"` (`input_mode` de `config.yaml`, ver secção acima) é acrescentado pelo
+`main.py`, não pelo `emitter.py`/`slot_manager.py` — o `SlotManager` continua a chamar
+`emitter.send_slots(occupied, queue_len)` exactamente como sempre chamou, sem saber nada de
+modos. `main.py` usa um pequeno `_ModeStampedEmitter` (subclasse de `UdpEmitter` só nesse
+ficheiro) que intercepta a serialização final e acrescenta `"mode"` só às mensagens
+`slots`; `emitter.py` e `slot_manager.py` ficam intocados. Do lado do jogo,
+`game/udp_input.py` aceita este campo com o mesmo rigor dos outros (só `"web"`/`"sip"`,
+nunca booleano nem outro tipo) e assume `"web"` quando o campo não vem — quer porque o
+bridge é anterior a esta mudança, quer porque ainda não chegou nenhuma mensagem `slots`
+(bridge desligado): ver `game/invite_overlay.py`.
 
 ## O adaptador web (`adapters/web_adapter.py`)
 
@@ -209,11 +223,7 @@ seguintes ficam na fila (posições 1 e 2); um `press` chega ao "jogo" como
 `heartbeat_timeout` curto injectado só para o teste correr depressa, o valor de produção
 continua a ser 15s).
 
-**Nota sobre `input_mode`**: `test_web_adapter.py` e `test_audio_router.py` assumem que a
-primeira mensagem recebida a seguir a `hello` é sempre `slot`/`queued`. Desde a mensagem
-`{"type":"config",...}` (enviada logo na ligação, antes de `hello` — ver secção
-`input_mode` acima), essa primeira mensagem passou a ser `config`, e esses dois testes
-falham num `assert` de igualdade estrita. Não é uma regressão do protocolo (nada do que
-existia deixou de funcionar, só foi acrescentada uma mensagem) — é preciso ajustar esses
-dois testes para ler/ignorar o `config` inicial antes de verificar a resposta ao `hello`.
-`test_bridge.py` (núcleo, não mexe em WebSocket) continua totalmente verde.
+**Nota sobre `input_mode`**: a mensagem `{"type":"config",...}` chega logo na ligação,
+antes de qualquer resposta a `hello` (ver secção `input_mode` acima); `test_web_adapter.py`
+já lê/ignora esse `config` inicial antes de verificar a resposta ao `hello` (ver
+`resposta_util()` no próprio ficheiro).

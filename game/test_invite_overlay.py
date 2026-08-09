@@ -53,6 +53,36 @@ def demo():
         display_with_qr = pygame.Surface((640, 480))
         invite_overlay.draw(display_with_qr, (0, 0), elapsed=0.0, queue_len=0)
         assert invite_overlay._qr_image is not None, "devia ter carregado o QR criado agora"
+
+        # mode="sip": convite diferente do de mode="web" (sem QR), mesmo
+        # com um QR válido disponível — modo sip nunca o desenha.
+        display_web = pygame.Surface((640, 480))
+        display_sip = pygame.Surface((640, 480))
+        invite_overlay.draw(display_web, (0, 0), elapsed=1.0, queue_len=0, mode="web")
+        invite_overlay.draw(display_sip, (0, 0), elapsed=1.0, queue_len=0, mode="sip")
+        assert _pixels_differ(display_web, display_sip), \
+            "convite sip devia ser visualmente diferente do convite web"
+
+        # mode="sip" também não pode rebentar sem QR nenhum (caso normal:
+        # não há QR para gerar de todo quando o evento é só telefones).
+        invite_overlay.QR_PATH = missing_path
+        invite_overlay._qr_loaded = False
+        display_sip_no_qr = pygame.Surface((640, 480))
+        baseline_sip = display_sip_no_qr.copy()
+        invite_overlay.draw(display_sip_no_qr, (0, 0), elapsed=0.0, queue_len=0, mode="sip")
+        assert _pixels_differ(display_sip_no_qr, baseline_sip), "draw() em modo sip devia alterar o quadrante"
+
+        # mode desconhecido ou ausente cai em "web" (retrocompatível) — o
+        # próprio default já prova a metade "ausente"; aqui prova-se que um
+        # valor não reconhecido também não rebenta e produz o mesmo resultado.
+        invite_overlay.QR_PATH = missing_path
+        invite_overlay._qr_loaded = False
+        display_default = pygame.Surface((640, 480))
+        display_unknown = pygame.Surface((640, 480))
+        invite_overlay.draw(display_default, (0, 0), elapsed=2.0, queue_len=0)
+        invite_overlay.draw(display_unknown, (0, 0), elapsed=2.0, queue_len=0, mode="qualquer-coisa")
+        assert not _pixels_differ(display_default, display_unknown), \
+            "mode desconhecido devia cair no comportamento de web, tal como a omissão do campo"
     finally:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)

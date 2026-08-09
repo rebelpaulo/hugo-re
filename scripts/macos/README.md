@@ -28,7 +28,12 @@ O script cria ou verifica o `.venv` arm64 na raiz do repo, confirma o
 
 ## Ordem de arranque no dia do evento
 
-Define primeiro a BigFile e valida todo o ambiente:
+Antes de mais, confirma `input_mode` em `bridge/config.yaml` consoante o que está montado
+na sala **desta** activação — `web` (só webapp/QR) ou `sip` (só telefones físicos); os dois
+nunca se cruzam no mesmo evento, e mudar isto não pede código, só reiniciar o bridge (ver
+`bridge/README.md`).
+
+Define depois a BigFile e valida todo o ambiente:
 
 ```sh
 export HUGO_ASSETS=/caminho/para/BigFile

@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 from aiohttp import web
 
-from adapters.web_adapter import create_app
+from adapters.web_adapter import create_app, load_input_mode
 from emitter import UdpEmitter
 from qr import generate_qr
 from slot_manager import SlotManager
@@ -32,6 +32,25 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
 QR_OUTPUT = REPO_ROOT / "game" / "resources" / "images" / "qr_lobby.png"
 
 TICK_INTERVAL_SECONDS = 1.0
+
+
+class _ModeStampedEmitter(UdpEmitter):
+    """`UdpEmitter` que acrescenta `"mode"` às mensagens `slots` que o
+    `SlotManager` já envia (ver `slot_manager.py:555`), para o jogo saber se
+    está em `input_mode=web` ou `sip` sem precisar de ler `config.yaml` ele
+    próprio (`game/udp_input.py` — sem o campo, assume "web").
+
+    Só a serialização final ganha o campo novo — não mexe em
+    `emitter.py` nem em `slot_manager.py`."""
+
+    def __init__(self, *args, mode: str, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._mode = mode
+
+    def _send(self, payload):
+        if payload.get("type") == "slots":
+            payload = {**payload, "mode": self._mode}
+        return super()._send(payload)
 
 
 def lan_ip() -> str:
@@ -64,7 +83,16 @@ async def run(config_path: Path) -> None:
     host = web_config.get("host", "0.0.0.0")
     port = int(web_config.get("port", 8080))
 
-    emitter = UdpEmitter.from_config(config_path)
+    # Uma só leitura de input_mode, a partir do --config efectivamente usado
+    # (não do bridge/config.yaml por omissão) — emissor e webapp têm de
+    # concordar sempre no mesmo modo.
+    input_mode = load_input_mode(config_path)
+    game_config = config.get("game") or {}
+    emitter = _ModeStampedEmitter(
+        host=game_config.get("host", "127.0.0.1"),
+        port=int(game_config.get("port", 9100)),
+        mode=input_mode,
+    )
     manager = SlotManager.from_config(config_path, emitter)
 
     ip = lan_ip()
@@ -82,7 +110,7 @@ async def run(config_path: Path) -> None:
     print(f"  AUDIO:  modo={audio_mode}")
     print(banner)
 
-    app, route = create_app(manager, audio_config=audio_config)
+    app, route = create_app(manager, audio_config=audio_config, input_mode=input_mode)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)

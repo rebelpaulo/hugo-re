@@ -69,16 +69,16 @@ for lixo in [b"{nao e json", b"", b"null", b"42", b'"string solta"', b"\xff\xfe\
 assert ui._pending == [], "lixo não devia produzir eventos"
 print("OK 4: JSON inválido/lixo não derruba nada")
 
-# 5. mensagem slots é guardada e não tratada como input
+# 5. mensagem slots é guardada e não tratada como input; sem "mode" assume "web"
 ui = make_input()
 ui._handle_packet(b'{"type": "slots", "occupied": [0, 2], "queue_len": 5}')
-assert ui.last_slots == {"occupied": [0, 2], "queue_len": 5}
+assert ui.last_slots == {"occupied": [0, 2], "queue_len": 5, "mode": "web"}
 assert ui._pending == [], "slots não é input, não pode ir para a fila de phone_events"
-print("OK 5: mensagem slots guardada, não tratada como input")
+print("OK 5: mensagem slots guardada, não tratada como input, mode omisso -> web")
 
 # 5b. slots malformado não rebenta e não corrompe last_slots anterior por lixo novo
 ui._handle_packet(b'{"type": "slots", "occupied": "nao e lista", "queue_len": 5}')
-assert ui.last_slots == {"occupied": [0, 2], "queue_len": 5}, "slots malformado não devia substituir o estado válido"
+assert ui.last_slots == {"occupied": [0, 2], "queue_len": 5, "mode": "web"}, "slots malformado não devia substituir o estado válido"
 print("OK 5b: slots malformado ignorado sem corromper o último estado válido")
 
 # 5c. valida integralmente jogadores, repetições e comprimento da fila
@@ -90,9 +90,30 @@ for invalido in [
     b'{"type":"slots","occupied":[0],"queue_len":true}',
 ]:
     ui._handle_packet(invalido)
-assert ui.last_slots == {"occupied": [0, 2], "queue_len": 5}, (
+assert ui.last_slots == {"occupied": [0, 2], "queue_len": 5, "mode": "web"}, (
     "slots inválido não devia substituir o estado válido")
 print("OK 5c: slots fora de gama, repetidos, booleanos ou negativos rejeitados")
+
+# 5d. mode explícito "sip" é aceite e guardado
+ui = make_input()
+ui._handle_packet(b'{"type":"slots","occupied":[0],"queue_len":2,"mode":"sip"}')
+assert ui.last_slots == {"occupied": [0], "queue_len": 2, "mode": "sip"}
+print("OK 5d: mode=sip explícito guardado")
+
+# 5e. mode inválido (string desconhecida, booleano, número) reprova a mensagem inteira
+ui = make_input()
+ui._handle_packet(b'{"type":"slots","occupied":[0],"queue_len":2,"mode":"web"}')
+for invalido in [
+    b'{"type":"slots","occupied":[1],"queue_len":9,"mode":"both"}',
+    b'{"type":"slots","occupied":[1],"queue_len":9,"mode":true}',
+    b'{"type":"slots","occupied":[1],"queue_len":9,"mode":1}',
+    b'{"type":"slots","occupied":[1],"queue_len":9,"mode":null}',
+    b'{"type":"slots","occupied":[1],"queue_len":9,"mode":["web"]}',
+]:
+    ui._handle_packet(invalido)
+assert ui.last_slots == {"occupied": [0], "queue_len": 2, "mode": "web"}, (
+    "mode inválido (tipo errado ou string desconhecida) não devia substituir o estado válido")
+print("OK 5e: mode inválido (tipo errado ou 'both') rejeitado sem derrubar nada")
 
 # 6. missing field / campo em falta é ignorado
 ui = make_input()

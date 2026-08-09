@@ -40,42 +40,25 @@ html, body {
 }
 .screen.active { display: flex; }
 
-/* ---------- Link discreto para a sinalética (só existe em input_mode=both;
-   ver bridge/config.yaml e phone.js) ---------- */
+/* ---------- Aviso de fallback em input_mode=sip (ver bridge/config.yaml e
+   phone.js) — alguém chegou à webapp num evento que é só telefones. Não é o
+   percurso normal, por isso fica deliberadamente curto. ---------- */
 
-.signage-link {
-  margin-top: 22px;
-  background: none;
-  border: none;
-  color: #4a4a42;
-  font-size: 3.4vw;
-  opacity: 0.75;
-  padding: 10px 14px;
-}
-.signage-link:active { opacity: 1; }
-
-/* ---------- Sinalética (telefone físico) ---------- */
-
-.signage-box {
-  margin-top: 12vh;
+.sip-box {
+  margin: auto;
   background: #33322b;
   border-radius: 18px;
   padding: 26px 22px;
   max-width: 480px;
   box-shadow: 0 8px 18px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
 }
-.signage-title {
-  font-size: 6.5vw;
-  color: #efe9d8;
-  margin: 0 0 14px;
-}
-.signage-text {
-  font-size: 4.4vw;
+.sip-text {
+  font-size: 5vw;
   line-height: 1.5;
   color: #efe9d8;
-  margin: 0 0 14px;
+  text-align: center;
+  margin: 0;
 }
-.signage-text-muted { color: #c8c2ab; font-size: 3.8vw; }
 
 .btn-back {
   margin-top: auto;

@@ -20,9 +20,10 @@ Contrato WebSocket (`/ws`), fixo com a webapp:
         {"type":"audio","action":"play","resource":"...","loops":0,"id":7}
         {"type":"audio","action":"stop","id":7}
 
-`input_mode` é a definição de produção em `config.yaml` (web/sip/both — ver
+`input_mode` é a definição de produção em `config.yaml` (web/sip — ver
 `bridge/README.md`), enviada assim que o WebSocket liga, para a webapp saber
-que ecrã mostrar sem ter de perguntar ao utilizador. Mensagem nova,
+se deve entrar na fila/teclado ou mostrar a mensagem de "hoje é por
+telefone" — os dois modos nunca se cruzam no mesmo evento. Mensagem nova,
 acrescentada a um contrato que já existia — nada do resto mudou.
 """
 
@@ -51,7 +52,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 QR_PATH = REPO_ROOT / "game" / "resources" / "images" / "qr_lobby.png"
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
-VALID_INPUT_MODES = ("web", "sip", "both")
+VALID_INPUT_MODES = ("web", "sip")
 DEFAULT_INPUT_MODE = "web"
 
 # Sem `ping` do cliente durante este tempo, a sessão perde o slot.
@@ -74,7 +75,7 @@ PLACEHOLDER_HTML = """<!doctype html>
 
 
 def load_input_mode(config_path: Path = CONFIG_PATH) -> str:
-    """Lê `input_mode` de `config.yaml` (web/sip/both — ver bridge/README.md).
+    """Lê `input_mode` de `config.yaml` (web/sip — ver bridge/README.md).
 
     Ficheiro ausente, chave ausente ou valor inválido caem todos em "web" (o
     modo mais restrito para o público — nunca deixa alguém cair sem querer
@@ -351,10 +352,10 @@ def create_app(
     Sem ela (`None`), o router de áudio simplesmente não arranca — usado pelos
     testes existentes que não precisam de áudio.
 
-    `input_mode` é "web"/"sip"/"both" (ver `bridge/README.md`). Sem ele
-    (`None`, o caso normal — `main.py` não passa este argumento), é lido
-    directamente de `bridge/config.yaml`, tal como `audio_config` já é lido
-    por `main.py` antes de chegar aqui.
+    `input_mode` é "web"/"sip" (ver `bridge/README.md`). Sem ele (`None`, o
+    caso normal — `main.py` não passa este argumento), é lido directamente
+    de `bridge/config.yaml`, tal como `audio_config` já é lido por `main.py`
+    antes de chegar aqui.
     """
     if input_mode is None:
         input_mode = load_input_mode()

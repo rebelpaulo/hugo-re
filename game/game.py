@@ -201,14 +201,18 @@ class Game:
                         if dt > Config.EFFECT_DURATION_ORB:
                             self.effective_attacks.remove(attack)
 
-            # Convite com QR nos quadrantes sem jogador — por cima de tudo,
-            # incluindo o logo de idle, para nunca ficar escondido.
+            # Convite nos quadrantes sem jogador — por cima de tudo, incluindo
+            # o logo de idle, para nunca ficar escondido. O modo (web/sip)
+            # vem do bridge na própria mensagem "slots" (ver udp_input.py);
+            # sem bridge a correr, "mode" nem existe e o convite web com QR
+            # é a degradação certa.
             slots = udp_input.get_slots()
             occupied = set(slots["occupied"]) if slots else set()
             queue_len = slots["queue_len"] if slots else 0
+            mode = slots["mode"] if slots else "web"
             for i in range(4):
                 if i not in occupied:
-                    invite_overlay.draw(display, self.positions[i], global_state.frame_time - self.start_time, queue_len)
+                    invite_overlay.draw(display, self.positions[i], global_state.frame_time - self.start_time, queue_len, mode)
 
             self.render_frame(ctx, display, program, render_object, global_state.any_playing)
             post_shader = time.time()

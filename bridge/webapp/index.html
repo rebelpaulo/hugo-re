@@ -17,33 +17,23 @@
 
 <div class="stage">
 
-  <!-- 1. Instruções para quem vai usar um telefone físico. Só aparece se a
-       produção configurou input_mode=sip (direto) ou input_mode=both (via
-       link discreto no ecrã "a ligar"/"fila") — ver bridge/config.yaml. -->
-  <section id="screen-signage" class="screen">
-    <div class="signage-box">
-      <h1 class="signage-title">Vais usar um telefone a sério?</h1>
-      <p class="signage-text">
-        Boa escolha. Procura um dos telefones montados no espaço, tira o auscultador
-        e segue as indicações no ecrã grande.
-      </p>
-      <p class="signage-text signage-text-muted">
-        Este ecrã não reserva lugar nenhum — é só para não andares perdido.
-      </p>
+  <!-- 1. Mensagem para quem chega à webapp num evento input_mode=sip — não
+       é o percurso normal (nesse modo não há QR nenhum no ecrã grande, logo
+       ninguém devia cair aqui), mas alguém pode ter guardado o URL de um
+       evento anterior. Nunca fica em branco. -->
+  <section id="screen-sip" class="screen">
+    <div class="sip-box">
+      <p class="sip-text">Hoje joga-se pelos telefones da sala.</p>
     </div>
-    <button class="btn-back" id="btn-signage-back" type="button">← voltar</button>
   </section>
 
-  <!-- 2. A ligar — primeiro ecrã que quem lê o QR vê em modo web/both. Sem
-       seletor: assim que o servidor confirma o modo, entra-se direto na
-       fila ou no teclado. -->
+  <!-- 2. A ligar — primeiro ecrã que quem lê o QR vê. Sem seletor: assim
+       que o servidor confirma o modo web, entra-se direto na fila ou no
+       teclado. -->
   <section id="screen-connecting" class="screen active">
     <div class="lcd lcd-standalone">
       <div class="lcd-line lcd-blink">A LIGAR…</div>
     </div>
-    <button class="signage-link" id="signage-link" type="button" hidden>
-      Vou antes usar um telefone físico →
-    </button>
   </section>
 
   <!-- 3. Fila -->
@@ -56,9 +46,6 @@
     <p class="queue-note">Não feches o ecrã — avisamos-te aqui assim que chegar a tua vez.</p>
     <div class="queue-dots"><span></span><span></span><span></span></div>
     <button class="btn-back" id="btn-queue-leave" type="button">← sair da fila</button>
-    <button class="signage-link" id="signage-link-queue" type="button" hidden>
-      Vou antes usar um telefone físico →
-    </button>
   </section>
 
   <!-- 4. É a tua vez -->

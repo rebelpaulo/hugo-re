@@ -1,19 +1,27 @@
-"""Convite com QR code para quadrantes sem jogador.
+"""Convite para quadrantes sem jogador — um por `input_mode` (ver
+bridge/config.yaml e game/udp_input.py).
 
 Um quadrante sem jogador deixa de ser só o vídeo de attract a correr — passa
-a ter, por cima, um convite "À ESPERA DE JOGADOR · LIGA-TE JÁ!" com QR. É o
-principal canal de recrutamento do ecrã: quem passa vê convites a piscar.
+a ter, por cima, um convite a piscar. É o principal canal de recrutamento do
+ecrã: quem passa vê convites, não vídeo parado.
 
-O QR é um só, geral (aponta para o lobby, não para um quadrante específico) —
-é gerado por outro processo para resources/images/qr_lobby.png. Este módulo
-tem de aguentar-se sem esse ficheiro (ainda pode não ter sido gerado), tal
-como o resto do jogo se aguenta sem sprites do scoreboard: mostra o convite
-na mesma, sem QR.
+    mode="web" (omissão) — "À ESPERA DE JOGADOR · LIGA-TE JÁ!" com QR. É o
+    convite de sempre; QR geral, aponta para o lobby, não para este
+    quadrante específico.
+    mode="sip" — o evento é só telefones físicos da sala (não há QR nenhum
+    no ecrã grande neste modo, ninguém haveria de o escanear): "À ESPERA DE
+    JOGADOR · PEGA NUM TELEFONE", sem QR nenhum.
 
-Legibilidade a 3-5 metros manda sobre tudo: QR grande, contraste alto, zona
-neutra à sua volta. A animação de pulsar é só um brilho subtil à volta do QR
-— o texto e o próprio QR ficam sempre nítidos e parados, para não estorvar
-quem está a jogar ao lado nem prejudicar a leitura do código.
+O QR é gerado por outro processo para resources/images/qr_lobby.png. Este
+módulo tem de aguentar-se sem esse ficheiro (ainda pode não ter sido
+gerado), tal como o resto do jogo se aguenta sem sprites do scoreboard:
+mostra o convite na mesma, sem QR.
+
+Legibilidade a 3-5 metros manda sobre tudo: texto grande, contraste alto,
+zona neutra à volta do QR quando existe. A animação de pulsar é só um brilho
+subtil — em modo web à volta do QR, em modo sip à volta do próprio texto —
+o texto e o QR ficam sempre nítidos e parados, para não estorvar quem está a
+jogar ao lado nem prejudicar a leitura do código.
 """
 import math
 import os
@@ -74,17 +82,32 @@ def _draw_centered(surface, font, text, color, y):
     return rect.height
 
 
-def draw(display, position, elapsed, queue_len=0):
+def draw(display, position, elapsed, queue_len=0, mode="web"):
     """Desenha o convite sobre o quadrante 320x240 em `position` de `display`.
 
     elapsed: segundos monótonos desde o arranque, só para a animação.
-    queue_len: se > 0, mostra "N NA FILA" (prova social).
+    queue_len: se > 0, mostra "N NA FILA" (prova social; só existe fila web).
+    mode: "web" (omissão) desenha o convite de sempre, com QR. "sip" desenha
+    o convite sem QR (evento só com telefones da sala) — qualquer outro
+    valor cai em "web", o mesmo comportamento de sempre.
     """
     _load_fonts()
-    qr = _load_qr()
 
     panel = pygame.Surface((QUAD_W, QUAD_H), pygame.SRCALPHA)
     panel.fill(_BG_COLOR)
+
+    if mode == "sip":
+        _draw_sip_invite(panel, elapsed)
+    else:
+        _draw_web_invite(panel, elapsed, queue_len)
+
+    display.blit(panel, position)
+
+
+def _draw_web_invite(panel, elapsed, queue_len):
+    """Convite de sempre: título, "LIGA-TE JÁ!" e o QR do lobby (se já
+    tiver sido gerado)."""
+    qr = _load_qr()
 
     y = 10
     y += _draw_centered(panel, _title_font, "À ESPERA DE JOGADOR", _TITLE_COLOR, y) + 4
@@ -119,4 +142,26 @@ def draw(display, position, elapsed, queue_len=0):
     if queue_len > 0:
         _draw_centered(panel, _queue_font, f"{queue_len} NA FILA", _QUEUE_COLOR, y)
 
-    display.blit(panel, position)
+
+def _draw_sip_invite(panel, elapsed):
+    """Convite sem QR: o evento é só telefones físicos da sala, não há QR
+    nenhum no ecrã grande neste modo — o brilho que no convite web pulsa à
+    volta do QR pulsa aqui à volta do próprio texto, para continuar a
+    chamar a atenção de quem passa."""
+    y = 60
+    y += _draw_centered(panel, _title_font, "À ESPERA DE JOGADOR", _TITLE_COLOR, y) + 20
+
+    sub_text = "PEGA NUM TELEFONE"
+    sub_rect = _sub_font.get_rect(sub_text)
+    sub_x = (QUAD_W - sub_rect.width) // 2
+
+    pulse = (math.sin(elapsed * 2.6) + 1) / 2
+    glow_pad = 14
+    glow_rect = pygame.Rect(sub_x - glow_pad, y - glow_pad,
+                             sub_rect.width + glow_pad * 2, sub_rect.height + glow_pad * 2)
+    glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
+    pygame.draw.rect(glow_surf, (*_GLOW_COLOR, int(70 + 80 * pulse)),
+                      glow_surf.get_rect(), border_radius=10)
+    panel.blit(glow_surf, glow_rect.topleft)
+
+    _sub_font.render_to(panel, (sub_x, y), sub_text, _SUB_COLOR)
