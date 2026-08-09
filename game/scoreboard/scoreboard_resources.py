@@ -1,9 +1,13 @@
+import os
+
 import pygame
 
 from resource import Resource
 
 
 class ScoreboardResources:
+    available = False
+
     background = None
 
     hugo_side = None
@@ -28,8 +32,18 @@ class ScoreboardResources:
 
     @staticmethod
     def init():
-        sprite1 = Resource.load_surface_res("scores/sprite1.png")
-        sprite2 = Resource.load_surface_res("scores/sprite2.png")
+        try:
+            asset = "scores/sprite1.png"
+            sprite1 = Resource.load_surface_res("scores/sprite1.png")
+            asset = "scores/sprite2.png"
+            sprite2 = Resource.load_surface_res("scores/sprite2.png")
+            asset = os.path.join(Resource.DATA_DIR, "RopeOutroData", "GFX", "SCORE.cgf")
+            score_font = Resource.load_surfaces("RopeOutroData", "SCORE.cgf", 0, 9)
+        except FileNotFoundError:
+            filename = asset if os.path.isabs(asset) else "resources/" + asset
+            print(f"Aviso: scoreboard indisponível; falta o ficheiro '{filename}', esperado em '{os.path.abspath(filename)}'.")
+            ScoreboardResources.available = False
+            return
 
         bg_crop = sprite1.subsurface(pygame.Rect(464, 144, 320, 256))
         ScoreboardResources.background = pygame.transform.scale(bg_crop, (300, 240))
@@ -53,6 +67,7 @@ class ScoreboardResources:
 
         ScoreboardResources.icon_negative = sprite1.subsurface(pygame.Rect(675, 92, 15, 24))
 
-        ScoreboardResources.score_font = Resource.load_surfaces("RopeOutroData", "SCORE.cgf", 0, 9)
+        ScoreboardResources.score_font = score_font
 
         ScoreboardResources.score_counter = Resource.load_sfx("RopeOutroData", "COUNTER.WAV")
+        ScoreboardResources.available = True

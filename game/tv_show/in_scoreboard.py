@@ -1,6 +1,7 @@
 from game_data import GameData
 from phone_events import PhoneEvents
 from scoreboard.scoreboard_game import ScoreboardGame
+from scoreboard.scoreboard_resources import ScoreboardResources
 from state import State
 from tv_show.attract import Attract
 from tv_show.going_cave import GoingCave
@@ -9,11 +10,20 @@ from tv_show.going_cave import GoingCave
 class InScoreboard(State):
     def __init__(self, context: GameData):
         super().__init__(context)
-        self.scoreboard = ScoreboardGame(context)
+        if ScoreboardResources.available:
+            self.scoreboard = ScoreboardGame(context)
+        else:
+            # sem sprites saltamos a apresentação, mas o cálculo tem de correr na mesma
+            # senão a caverna parte de um forest_score em bruto (sem bónus/penalização)
+            context.forest_score = ScoreboardGame.compute_total_score(context)
+            self.scoreboard = None
 
     def process_events(self, phone_events: PhoneEvents):
         if phone_events.hungup:
             return Attract
+
+        if self.scoreboard is None:
+            return GoingCave
 
         if self.scoreboard.ended:
             return GoingCave
@@ -22,7 +32,8 @@ class InScoreboard(State):
         return None
 
     def render(self, screen):
-        self.scoreboard.render(screen)
+        if self.scoreboard is not None:
+            self.scoreboard.render(screen)
 
     def on_exit(self):
         super().on_exit()

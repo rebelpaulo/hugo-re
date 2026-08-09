@@ -42,6 +42,21 @@ class ScoreboardGame:
     HUGO_START_Y = 0
     HUGO_END_Y = 180
 
+    @classmethod
+    def compute_total_score(cls, context: GameData) -> int:
+        """
+        Calcula o total que o scoreboard mostraria (sacos + bónus de fim + sacos
+        dourados - penalização de vidas perdidas), sem instanciar nada visual.
+        Usado no caminho de salto do in_scoreboard.py quando faltam os sprites,
+        para a caverna receber sempre o mesmo forest_score.
+        """
+        sack_score = context.forest_normal_sacks_collected * cls.SACK_SCORE
+        end_bonus = cls.END_BONUS if context.forest_reached_end else 0
+        golden_score = context.forest_golden_sacks_collected * cls.GOLDEN_SACK_SCORE
+        lives_lost = 3 - context.forest_lives
+        lives_penalty = lives_lost * cls.LIFE_LOST_PENALTY
+        return sack_score + end_bonus + golden_score - lives_penalty
+
     def __init__(self, context: GameData):
         self.context = context
         self.start_time = global_state.frame_time

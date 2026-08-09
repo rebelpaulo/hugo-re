@@ -40,7 +40,7 @@ class HighScoreRenderer:
             self.set_random_score_game()
             self.time_score = global_state.frame_time
 
-        self.render_outline(screen, "PUNTAJES " + self.games[self.score_game]["name"], 30, 30)
+        self.render_outline(screen, "PONTUAÇÕES " + self.games[self.score_game]["name"], 30, 30)
 
         top_scores = self.scores.get_top_scores(self.score_game, 5)
         for rank, (name, score) in enumerate(top_scores, start=1):
