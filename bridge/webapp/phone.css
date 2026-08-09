@@ -57,7 +57,16 @@ html, body {
   transition: opacity 350ms ease;
   animation: splash-flicker 150ms steps(1);
 }
-.splash.hide { opacity: 0; }
+/* Durante o crossfade a splash ainda está no ecrã mas já não deve apanhar
+   toques — senão os primeiros 350 ms de teclado são engolidos. */
+.splash.hide { opacity: 0; pointer-events: none; }
+
+/* CRÍTICO: sem isto a splash fica invisível mas continua no layout, por
+   cima de tudo, a comer TODOS os toques — o teclado inteiro fica morto e
+   não há nada no ecrã que o explique. O `display: flex` acima é uma regra
+   de autor e vence o `[hidden] { display: none }` do browser, portanto o
+   atributo hidden sozinho não chega. Aconteceu mesmo, num Android real. */
+.splash[hidden] { display: none; }
 .splash-logo {
   width: min(80vw, 360px);
   height: auto;
