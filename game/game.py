@@ -140,10 +140,13 @@ class Game:
                     if fullscreen_button.hit(self._surface_pos(event.pos)):
                         self._toggle_fullscreen(ctx)
                         self.pointer_until = global_state.frame_time + POINTER_LINGER
-                        continue  # este clique é do botão, não é para sair
-                    running = False
 
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == Config.BTN_EXIT):
+                # Só `QUIT` fecha o jogo — ou seja, Cmd+Q e fechar a janela.
+                # O upstream fechava a qualquer clique esquerdo e no F12
+                # (Config.BTN_EXIT); num evento, com o ecrã ao alcance de toda
+                # a gente, qualquer das duas fecha o jogo à frente da sala.
+                # Decisão do cliente: fora as duas.
+                if event.type == pygame.QUIT:
                     running = False
 
                 if event.type == pygame.KEYDOWN:

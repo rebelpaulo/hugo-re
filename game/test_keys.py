@@ -25,7 +25,9 @@ for nome, lista in BOTOES.items():
                 f"tecla {pygame.key.name(k)!r} repetida: "
                 f"BTN_{nome}[jogador {i+1}] e BTN_{vista[k][0]}[jogador {vista[k][1]+1}]")
             vista[k] = (nome, i)
-assert Config.BTN_EXIT not in vista, "BTN_EXIT colide com um botão de jogador"
+# Já não há tecla de saída (ver config.py): nada de fechar o jogo a meio de um
+# evento por engano. Guarda contra a reintrodução silenciosa de uma.
+assert not hasattr(Config, "BTN_EXIT"), "voltou a haver tecla de saída — ver config.py"
 
 # 3. O jogador 4 tem de ser jogável sem teclado numérico
 NUMERICO = {pygame.K_KP0,pygame.K_KP1,pygame.K_KP2,pygame.K_KP3,pygame.K_KP4,

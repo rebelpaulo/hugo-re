@@ -20,7 +20,10 @@ class Config:
     # Sistema; caso contrário é preciso carregar em Fn ao mesmo tempo.
     BTN_OFF_HOOK = [(pygame.K_F1,), (pygame.K_F3,), (pygame.K_F5,), (pygame.K_F7,)]
     BTN_HUNG_UP = [(pygame.K_F2,), (pygame.K_F4,), (pygame.K_F6,), (pygame.K_F8,)]
-    BTN_EXIT = pygame.K_F12
+    # Não há tecla de saída. Havia F12 (`BTN_EXIT`), e o upstream fechava
+    # também a qualquer clique esquerdo — num evento, com o ecrã ao alcance
+    # de toda a gente, é fechar o jogo à frente da sala. Fecha-se por Cmd+Q,
+    # por fechar a janela, ou parando o supervisor.
 
     # Cada jogador tem um tuplo de teclas aceites para o mesmo botão.
     #
