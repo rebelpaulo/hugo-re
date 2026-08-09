@@ -45,12 +45,17 @@ class Game:
         frag_shader = f.read()
 
     if platform.system() == "Darwin":
-        pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
         vert_shader = vert_shader.replace("#version 300 es", "#version 330 core")
         frag_shader = frag_shader.replace("#version 300 es", "#version 330 core")
-                
+
     def run(self):
         pygame.init()
+
+        # Em macOS é preciso pedir explicitamente o perfil OpenGL core. Tem de ser
+        # depois do pygame.init() e antes do set_mode(): no corpo da classe o
+        # subsistema de vídeo ainda não existe e isto rebenta logo no import.
+        if platform.system() == "Darwin":
+            pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
 
         fs = pygame.FULLSCREEN if Config.SCR_FULLSCREEN or "FULLSCREEN" in os.environ else 0
         fs |= pygame.OPENGL | pygame.DOUBLEBUF
