@@ -23,6 +23,15 @@ WebSocket existente sem o alterar — ver `bridge/adapters/web_adapter.py`):
 
     {"type":"audio","action":"play","resource":"...","loops":0,"id":N}
     {"type":"audio","action":"stop","id":N}
+
+Deteção de fim de partida: o jogo é one-way por desenho e nunca fala com o
+bridge, mas toca um som próprio (`you_lost.wav`, o apresentador a
+despedir-se) uma única vez, exactamente ao entrar no estado de fim de jogo
+(ver `game/tv_show/ending.py` + `game/tv_show/in_cave.py:19`). Um `PLAY` cujo
+`resource` esteja em `ending_resources` (derivado do código do jogo, nunca
+escrito à mão — ver `_tv_show_ending_resources` em
+`adapters/web_adapter.py`) dispara `on_match_ended(player)`, que liberta o
+lugar e avisa a sessão — ver `bridge/README.md`.
 """
 
 from __future__ import annotations
@@ -105,6 +114,8 @@ class AudioRouter:
         pa_ports: list[int] | None = None,
         pa_timeout: float = 0.4,
         host: str = "0.0.0.0",
+        ending_resources: frozenset[str] = frozenset(),
+        on_match_ended: Optional[Callable[[int], Awaitable[None]]] = None,
     ) -> None:
         if mode not in ("devices", "pa"):
             raise ValueError(f"modo de áudio desconhecido: {mode!r}")
@@ -116,6 +127,16 @@ class AudioRouter:
         self.mode = mode
         self.host = host
         self.pa_timeout = pa_timeout
+        # Fim de partida: o jogo é one-way por desenho (nunca fala com o
+        # bridge — ver bridge/README.md), mas toca `you_lost.wav` (o
+        # apresentador a despedir-se) uma única vez, exactamente ao entrar
+        # em `tv_show/ending.py` (ver `game/tv_show/in_cave.py:19`, só
+        # alcançado quando `cave.ended`). `ending_resources` vem já
+        # derivado do código do jogo por quem instancia o router (ver
+        # `_tv_show_ending_resources` em `adapters/web_adapter.py`) — nunca
+        # escrito à mão aqui. Vazio = detecção desligada.
+        self.ending_resources = ending_resources
+        self.on_match_ended = on_match_ended
         self._pa_clients = (
             [_PaClient(pa_host, port, pa_timeout) for port in (pa_ports or [])]
             if mode == "pa"
@@ -173,8 +194,19 @@ class AudioRouter:
         if not isinstance(cmd, dict):
             return
 
+        # Deteção de fim de partida: independente do modo (`devices`/`pa`) —
+        # o som ainda dá sinal do fim mesmo quando sai pelas colunas do Mac
+        # em vez do telemóvel. Em modo "pa" não há mensagem de áudio para
+        # entregar por WebSocket primeiro, por isso corre logo à parte; em
+        # modo "devices" entra depois na mesma tarefa que a entrega do PLAY
+        # (ver `_dispatch_then_maybe_end_match` abaixo) — a ordem importa.
+        resource = cmd.get("resource")
+        is_ending = cmd.get("cmd") == "PLAY" and resource in self.ending_resources
+
         if self.mode == "pa":
             asyncio.ensure_future(self._proxy_to_pa(player, data, addr, transport, cmd))
+            if is_ending:
+                asyncio.ensure_future(self._safe_match_ended(player))
             return
 
         cmd_type = cmd.get("cmd")
@@ -184,11 +216,13 @@ class AudioRouter:
             message = {
                 "type": "audio",
                 "action": "play",
-                "resource": cmd.get("resource"),
+                "resource": resource,
                 "loops": cmd.get("loops", 0),
                 "id": instance_id,
             }
-            asyncio.ensure_future(self._safe_dispatch(player, message))
+            asyncio.ensure_future(
+                self._dispatch_then_maybe_end_match(player, message, is_ending)
+            )
         elif cmd_type == "STOP":
             instance_id = cmd.get("instance_id")
             transport.sendto(
@@ -206,6 +240,29 @@ class AudioRouter:
             await self.dispatch(player, message)
         except Exception:  # uma falha de entrega nunca pode derrubar o router
             LOGGER.exception("Falha a encaminhar %s para o jogador %d", message, player)
+
+    async def _safe_match_ended(self, player: int) -> None:
+        if self.on_match_ended is None:
+            return
+        try:
+            await self.on_match_ended(player)
+        except Exception:  # idem — nunca pode derrubar o router
+            LOGGER.exception("Falha a processar fim de partida do jogador %d", player)
+
+    async def _dispatch_then_maybe_end_match(
+        self, player: int, message: dict, is_ending: bool
+    ) -> None:
+        """Entrega primeiro a mensagem de áudio, só depois trata o fim de
+        partida — nesta ordem, nunca ao contrário.
+
+        Libertar o lugar limpa `SlotManager._slots[player]`, que é
+        exactamente o que `dispatch_audio` (`adapters/web_adapter.py`) usa
+        para encontrar a sessão do jogador. Se a ordem fosse invertida, o
+        próprio som de fim de partida (`you_lost.wav`) arriscava nunca
+        chegar ao telemóvel — o jogador ficaria sem ouvir a despedida."""
+        await self._safe_dispatch(player, message)
+        if is_ending:
+            await self._safe_match_ended(player)
 
     # ------------------------------------------------------------------
     # Modo "pa": proxy transparente para o audio-server local.

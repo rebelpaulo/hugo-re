@@ -16,6 +16,7 @@ Contrato WebSocket (`/ws`), fixo com a webapp:
         {"type":"queued","position":3,"ahead":2}
         {"type":"your_turn","player":2,"seconds":15}
         {"type":"released"}
+        {"type":"finished"}
         {"type":"pong"}
         {"type":"audio","action":"play","resource":"...","loops":0,"id":7}
         {"type":"audio","action":"stop","id":7}
@@ -109,6 +110,16 @@ def decision_to_message(decision: Decision, clock: Callable[[], float]) -> dict 
         seconds = max(0, round(decision.deadline - clock()))
         return {"type": "your_turn", "player": decision.player, "seconds": seconds}
     if decision.kind == "released":
+        # `reason="match_ended"` só acontece via `SlotManager.release_player`
+        # (fim de partida detectado no áudio, ver AudioRouter/create_app
+        # abaixo) — mensagem própria, nova, para a sessão distinguir "a tua
+        # partida acabou" de "perdeste o lugar" (timeout/desconexão). Depois
+        # desta mensagem a sessão fica "idle" no SlotManager: `handle_event`
+        # já ignora teclas de sessões não activas, então nenhum código extra
+        # é preciso para bloquear o teclado — uma sessão nova entra na fila
+        # normalmente, como qualquer pessoa.
+        if decision.reason == "match_ended":
+            return {"type": "finished"}
         return {"type": "released"}
     return None
 
@@ -240,12 +251,17 @@ def _class_literal_values(path: Path, class_name: str) -> dict[str, object]:
     return {}
 
 
-def _tv_show_audio_resources(repo_root: Path) -> set[str]:
+def _tv_show_audio_resources(repo_root: Path, *, attrs: frozenset[str] | None = None) -> set[str]:
     """Deriva as vozes do programa de TV do próprio código do jogo.
 
     `TvShowResources` constrói cada caminho a partir de `audio_prefix` dentro
     do ciclo por `Config.COUNTRIES`. Lemos a sua AST em vez de importar pygame
     ou manter aqui uma segunda lista manual dos seis ficheiros.
+
+    `attrs`, se dado, restringe a leitura aos atributos `TvShowResources.*`
+    indicados (ex.: `{"audio_ending"}`) — usado pela detecção de fim de
+    partida em `_tv_show_ending_resources`, para não confundir o som de fim
+    com os outros cinco (attract, initial, press_5, going_scylla, have_luck).
     """
     config = _class_literal_values(repo_root / "game" / "config.py", "Config")
     countries = config.get("COUNTRIES", [])
@@ -266,6 +282,7 @@ def _tv_show_audio_resources(repo_root: Path) -> set[str]:
             and isinstance(target.value.value, ast.Name)
             and target.value.value.id == "TvShowResources"
             and target.value.attr.startswith("audio_")
+            and (attrs is None or target.value.attr in attrs)
             and isinstance(value, ast.BinOp)
             and isinstance(value.op, ast.Add)
             and isinstance(value.left, ast.Name)
@@ -284,6 +301,28 @@ def _tv_show_audio_resources(repo_root: Path) -> set[str]:
         if isinstance(assets, str):
             resources.update(f"audio_for_videos/{assets}/{filename}" for filename in filenames)
     return resources
+
+
+def _tv_show_ending_resources(repo_root: Path) -> frozenset[str]:
+    """Só o(s) recurso(s) de fim-de-partida (`TvShowResources.audio_ending`,
+    tocado uma única vez ao entrar em `tv_show/ending.py` — ver
+    `game/tv_show/in_cave.py:19`, só chega lá quando `cave.ended`).
+
+    Usado pelo `AudioRouter` para detectar o fim da partida sem o nome do
+    ficheiro (`you_lost.wav`) escrito à mão aqui — deriva-se do código do
+    jogo tal como `build_audio_manifest`. Falha de leitura (jogo mudou de
+    forma inesperada) devolve conjunto vazio: a detecção fica desligada em
+    vez de arriscar apanhar o som errado."""
+    try:
+        return frozenset(_tv_show_audio_resources(repo_root, attrs=frozenset({"audio_ending"})))
+    except (OSError, SyntaxError, ValueError) as exc:
+        LOGGER.warning(
+            "Não consegui derivar o recurso de fim de partida de %s (%s) — "
+            "detecção de fim de partida desligada",
+            repo_root / "game" / "tv_show" / "tv_show_resources.py",
+            exc,
+        )
+        return frozenset()
 
 
 def build_audio_manifest(repo_root: Path) -> list[str]:
@@ -482,6 +521,13 @@ def create_app(
             except ConnectionResetError:
                 return False
 
+        async def handle_match_ended(player: int) -> None:
+            """Fim de partida detectado no áudio (ver AudioRouter) — liberta o
+            lugar (repõe o quadrante, ver `SlotManager._release_active`) e
+            avisa a sessão pela WebSocket via `route()`."""
+            await bridge.route(manager.release_player(player))
+
+        ending_resources = _tv_show_ending_resources(REPO_ROOT)
         audio_router = AudioRouter(
             ports=list(audio_config.get("ports", [9001, 9002, 9003, 9004])),
             dispatch=dispatch_audio,
@@ -489,6 +535,8 @@ def create_app(
             pa_host=audio_config.get("pa_host", "127.0.0.1"),
             pa_ports=audio_config.get("pa_ports"),
             pa_timeout=float(audio_config.get("pa_timeout_seconds", 0.4)),
+            ending_resources=ending_resources,
+            on_match_ended=handle_match_ended if ending_resources else None,
         )
         app["audio_router"] = audio_router
         app.on_startup.append(lambda _app: audio_router.start())

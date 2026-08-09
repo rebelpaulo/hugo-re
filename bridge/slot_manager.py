@@ -330,6 +330,25 @@ class SlotManager:
             self._emit_slots()
         return self._finish(decisions)
 
+    def release_player(self, player: int, reason: str = "match_ended") -> list[Decision]:
+        """Liberta um lugar pelo índice do jogador, não pela sessão.
+
+        Usado pelo fim de partida detectado no `AudioRouter` (o jogo é
+        one-way por desenho — nunca fala com o bridge, ver `bridge/README.md`)
+        onde só se conhece o jogador (a porta UDP), nunca o `source_id`. Sem
+        sessão activa nesse lugar não faz nada. `reason` != "hungup" faz
+        `_release_active` repor o quadrante (ver acima)."""
+        decisions: list[Decision] = []
+        now = self.clock()
+        self._expire(now, decisions)
+        if 0 <= player < self.slot_count:
+            source_id = self._slots[player]
+            session = self._sessions.get(source_id) if source_id else None
+            if session and session.state == "active":
+                self._release_active(session, reason, decisions)
+                self._fill_available(now, decisions)
+        return self._finish(decisions)
+
     def tick(self) -> list[Decision]:
         """Processa prazos usando o relógio injectado; deve ser chamado regularmente."""
         decisions: list[Decision] = []
@@ -401,6 +420,23 @@ class SlotManager:
         player = session.player
         if player is None:
             return
+        if reason != "hungup":
+            # A sessão desapareceu sem mandar `hungup` explícito (ligação
+            # caiu, heartbeat perdido, fim de partida detectado no áudio) —
+            # sem isto o jogo nunca sai do estado onde ficou (só 8 estados em
+            # game/tv_show/ leem `hungup`), e o próximo a apanhar este lugar
+            # encontra o quadrante preso a meio da partida anterior. Vai
+            # direto ao emitter, sem passar pela deduplicação de 60ms
+            # (`_last_events`), para nunca ser engolido; `_clear_player_dedup`
+            # a seguir, já existente, garante que também não fica nenhum
+            # registo deste `hungup` sintético a envenenar a janela de dedup
+            # do próximo jogador que ocupar este lugar.
+            if not self.emitter.send_event(player, "hungup"):
+                LOGGER.error(
+                    "Não foi possível repor o quadrante do jogador %d ao libertar (%s)",
+                    player,
+                    reason,
+                )
         self._slots[player] = None
         session.state = "idle"
         session.player = None

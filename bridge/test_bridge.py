@@ -121,6 +121,81 @@ def test_inactivity_timeout_releases_slot() -> None:
     assert released.reason == "inactivity_timeout"
     assert manager.occupied == []
     assert emitter.slot_states[-1] == ([], 0)
+    # P0: sem hungup explícito, a ausência dele nunca chegava ao jogo — o
+    # quadrante ficava preso a meio da partida anterior (ver slot_manager.py,
+    # _release_active). inactivity_timeout tem de repor sozinho.
+    assert emitter.events == [(0, "hungup")]
+
+
+# ---------------------------------------------------------------------------
+# P0: qualquer libertação que não venha de um `hungup` explícito (disconnect,
+# inactivity_timeout, ou o novo release_player do fim de partida) tem de
+# repor o quadrante mandando `hungup` sintético ao jogo — e esse sintético
+# não pode ser engolido pela deduplicação de 60ms nem envenenar a janela do
+# próximo jogador a ocupar o mesmo lugar.
+# ---------------------------------------------------------------------------
+
+
+def test_disconnect_without_hungup_sends_synthetic_hungup() -> None:
+    manager, _, emitter = make_manager()
+    manager.connect("web-0", "web")
+    manager.handle_event("web-0", "offhook")
+    assert emitter.events == [(0, "offhook")]
+
+    # Página fechada à bruta: nunca chega um {"type":"hangup"} da webapp.
+    decisions = manager.disconnect("web-0")
+    released = find(decisions, "released", "web-0")
+    assert released.reason == "disconnected"
+    assert emitter.events == [(0, "offhook"), (0, "hungup")], emitter.events
+
+
+def test_explicit_hungup_is_not_duplicated() -> None:
+    """O caminho que já manda `hungup` (handle_event, linha ~246) não pode
+    voltar a mandá-lo ao libertar — só um `hungup` por partida."""
+    manager, _, emitter = make_manager()
+    manager.connect("web-0", "web")
+    decisions = manager.handle_event("web-0", "hungup")
+    assert find(decisions, "forwarded", "web-0").event == "hungup"
+    assert find(decisions, "released", "web-0").reason == "hungup"
+    assert emitter.events == [(0, "hungup")], emitter.events
+
+
+def test_synthetic_hungup_bypasses_dedup_and_does_not_poison_next_player() -> None:
+    """O sintético não pode ser engolido pela janela de 60ms, nem deixar lá
+    um registo que engula o `hungup` real do próximo jogador a ocupar o
+    mesmo lugar, mandado poucos milissegundos depois."""
+    manager, clock, emitter = make_manager()
+    manager.connect("web-0", "web")
+    manager.disconnect("web-0")
+    assert emitter.events == [(0, "hungup")]
+
+    clock.advance(0.030)  # dentro da janela de dedup de 60ms
+    manager.connect("web-1", "web")  # apanha o lugar 0, agora livre
+    assert manager.player_for("web-1") == 0
+
+    decisions = manager.handle_event("web-1", "hungup")
+    forwarded = find(decisions, "forwarded", "web-1")
+    assert forwarded.player == 0
+    assert emitter.events == [(0, "hungup"), (0, "hungup")], emitter.events
+
+
+def test_release_player_by_index_resets_quadrant() -> None:
+    """`release_player`, usado pela deteção de fim de partida no
+    AudioRouter (só conhece o jogador, não o source_id)."""
+    manager, _, emitter = make_manager()
+    fill(manager)
+    manager.connect("web-4", "web")
+
+    decisions = manager.release_player(2)
+    released = find(decisions, "released", "web-2")
+    assert released.reason == "match_ended"
+    assert manager.occupied == [0, 1, 3]
+    assert emitter.events == [(2, "hungup")]
+    # o lugar 2 fica livre e disponível — quem estava na fila é oferecido.
+    assert find(decisions, "offer", "web-4").player == 2
+
+    # jogador sem ninguém no lugar: no-op silencioso, sem excepção.
+    assert manager.release_player(2) == []
 
 
 def test_event_dedup_window() -> None:
@@ -238,6 +313,10 @@ TESTS = [
     test_release_offers_first_in_queue,
     test_confirmation_timeout_rotates,
     test_inactivity_timeout_releases_slot,
+    test_disconnect_without_hungup_sends_synthetic_hungup,
+    test_explicit_hungup_is_not_duplicated,
+    test_synthetic_hungup_bypasses_dedup_and_does_not_poison_next_player,
+    test_release_player_by_index_resets_quadrant,
     test_event_dedup_window,
     test_sip_waiter_has_priority_over_web_queue,
     test_sip_never_preempts,

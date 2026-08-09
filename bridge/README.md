@@ -79,6 +79,9 @@ Cada ligação recebe um `source_id` único e estável. O tipo é `"web"` ou `"s
 - `handle_event(source_id, event) -> list[Decision]`: envia um evento válido ao jogo.
 - `touch(source_id) -> list[Decision]`: renova actividade sem enviar nada ao jogo.
 - `disconnect(source_id) -> list[Decision]`: liberta e remove a sessão.
+- `release_player(player, reason="match_ended") -> list[Decision]`: liberta um lugar
+  pelo índice do jogador, não pela sessão — para quem só conhece a porta UDP (o
+  `AudioRouter`, ver secção "Áudio" abaixo). Sem sessão activa nesse lugar, não faz nada.
 - `tick() -> list[Decision]`: processa ofertas e inactividade expiradas.
 - `end_match() -> list[Decision]`: limpa ocupantes, fila e esperas no fim da partida.
 - `queue_status(source_id)` e `queue_snapshot()`: expõem posição e número de pessoas à
@@ -94,6 +97,20 @@ Uma oferta reserva o slot até à confirmação ou ao fim do prazo. Um SIP que j
 espera tem prioridade quando aparece a próxima vaga; nunca expulsa um ocupante. A espera
 SIP não tem posição pública. `queue_len` conta apenas as sessões web ainda em FIFO, sem
 contar ofertas já emitidas.
+
+**Toda a libertação repõe o quadrante no jogo, mesmo sem `hungup` explícito** (bug P0
+corrigido — antes disto, só o caminho que já mandava `hungup` explicitamente repunha o
+jogo; uma sessão que desaparecesse por `disconnect` ou `inactivity_timeout` largava o
+slot só no `SlotManager`, sem avisar o jogo, e o lugar seguinte apanhava o quadrante
+preso a meio da partida anterior — só 8 estados em `game/tv_show/` leem `hungup`, é a
+única forma do jogo voltar ao `attract`). `_release_active` manda agora `hungup`
+sintético ao jogo sempre que a `reason` da libertação não é `"hungup"`
+(`disconnected`, `inactivity_timeout`, `match_ended`) — directo pelo emitter, sem passar
+pela deduplicação de 60ms (nunca engolido), com `_clear_player_dedup(player)` a seguir a
+garantir que também não fica lá nenhum registo a envenenar a janela de dedup do próximo
+jogador a ocupar o mesmo lugar (prova: `test_synthetic_hungup_bypasses_dedup_and_does_not_poison_next_player`
+em `test_bridge.py`). O caminho que já mandava `hungup` (`handle_event`, `reason="hungup"`)
+continua a não duplicar nada.
 
 ## Contrato UDP
 
@@ -140,6 +157,14 @@ si não pede lugar sozinha, e em `input_mode=sip` a webapp nem chega a mandar `h
 Cada `Decision` devolvida é traduzida para a mensagem certa e encaminhada para a sessão
 certa; uma oferta perdida sem confirmação (`offer_expired`) volta automaticamente ao fim
 da fila, porque a webapp não tem mensagem própria para pedir isso outra vez.
+
+Uma decisão `released` com `reason="match_ended"` (só o fim de partida detectado no
+áudio, ver secção "Áudio" abaixo — nunca timeout/desconexão) vira uma mensagem própria,
+nova, acrescentada ao contrato sem alterar o resto: `{"type":"finished"}`. As outras
+razões de `released` (timeout, desconexão) continuam a virar `{"type":"released"}`, como
+sempre. Depois de `finished`, a sessão fica `"idle"` no `SlotManager` — `handle_event` já
+ignora teclas de sessões não activas, por isso nenhum código extra bloqueia o teclado; uma
+ligação nova entra na fila normalmente, como qualquer pessoa.
 
 Heartbeat: sem `ping` do cliente durante 15s (`HEARTBEAT_TIMEOUT_SECONDS`, injectável em
 `create_app` para testes), a sessão é fechada e o slot libertado via `disconnect()`.
@@ -263,6 +288,29 @@ tem de ficar dentro da respectiva raiz; travessia com `..` é recusada. O `.wav`
 16 bits/mono/44.1kHz com `ffmpeg`, uma vez, para `audio.cache_dir`; pedidos seguintes
 servem directamente da cache, mesmo depois de reiniciar o bridge.
 
+**Deteção de fim de partida**: o jogo é one-way por desenho e nunca fala com o
+bridge — mas toca um som próprio uma única vez, exactamente ao entrar no estado de fim de
+jogo: `you_lost.wav` (o apresentador a despedir-se), tocado em `game/tv_show/ending.py`
+(`on_enter` de `VideoState`, sem loop) e só alcançado a partir de
+`game/tv_show/in_cave.py:19` quando `cave.ended`. Confirmado no código do jogo (não
+implementado sem essa confirmação, ver ticket): `audio_ending` só é lido nesse único
+sítio, nunca tocado a meio de jogo.
+
+`_tv_show_ending_resources` (`adapters/web_adapter.py`) deriva os caminhos completos
+(ex.: `audio_for_videos/pt/you_lost.wav`) da própria AST de
+`game/tv_show/tv_show_resources.py` + `game/config.py` — nunca escritos à mão — e passa-os
+ao `AudioRouter` como `ending_resources`. Um `PLAY` cujo `resource` esteja nesse conjunto
+(em qualquer modo, `devices` ou `pa`) dispara `on_match_ended(player)`, que chama
+`manager.release_player(player)` e encaminha as decisões daí resultantes — liberta o
+lugar (repõe o quadrante, ver secção "Interface para B2 e B3" acima) e avisa a sessão com
+`{"type":"finished"}` (ver secção do adaptador web acima). Falha a derivar os recursos
+(jogo mudou de forma inesperada) desliga a deteção em vez de arriscar um falso positivo.
+
+Ordem garantida numa única tarefa (`_dispatch_then_maybe_end_match`): a mensagem de áudio
+é sempre entregue **antes** de se tratar o fim de partida — libertar o lugar limpa
+`SlotManager._slots[player]`, que é o que `dispatch_audio` usa para encontrar a sessão;
+pela ordem errada, o próprio `you_lost.wav` arriscava nunca chegar ao telemóvel.
+
 **Manifesto de pré-carga** (`build_audio_manifest`): lê `game/forest/*.py` e
 `game/cave/*.py` (só leitura) à procura de `load_speak`/`load_sfx`. Também lê a AST de
 `game/tv_show/tv_show_resources.py` e de `game/config.py`, derivando os ficheiros de
@@ -319,6 +367,24 @@ continua a ser 15s).
 antes de qualquer resposta a `hello` (ver secção `input_mode` acima); `test_web_adapter.py`
 já lê/ignora esse `config` inicial antes de verificar a resposta ao `hello` (ver
 `resposta_util()` no próprio ficheiro).
+
+`test_audio_router.py` inclui também as duas provas pedidas para este ciclo, ambas
+ponta a ponta (UDP + WebSocket a sério, sem mocks):
+`test_disconnect_without_hangup_resets_quadrant_via_synthetic_hungup` (P0 — liga, entra
+no jogo, fecha a sessão à bruta sem `hangup`, confirma no socket UDP que faz de "jogo"
+que o `hungup` sintético chega e que uma sessão nova no mesmo lugar joga logo a seguir) e
+`test_match_end_detected_via_you_lost_audio` (fim de partida — simula o `PLAY` de
+`you_lost.wav` na porta de um jogador, confirma `{"type":"finished"}`, o lugar libertado,
+as teclas dessa sessão já não chegarem ao jogo, e uma sessão nova entrar no lugar). Sobre
+"o jogo a correr": o jogo real só ouve UDP em `127.0.0.1:9100`, porta fixa no código
+(`game/udp_input.py`), sem forma de apontar uma segunda instância a outra porta — estes
+testes usam por isso o mesmo duplo (socket UDP real, a escutar a sério) que todo o resto
+deste ficheiro e `test_web_adapter.py` já usam para "o jogo". `test_bridge.py` cobre o
+mesmo P0 ao nível do `SlotManager` sozinho (sem rede): `test_disconnect_without_hungup_sends_synthetic_hungup`,
+`test_explicit_hungup_is_not_duplicated`,
+`test_synthetic_hungup_bypasses_dedup_and_does_not_poison_next_player` (o caso do dedup
+de 60ms a não engolir nem envenenar o próximo jogador) e
+`test_release_player_by_index_resets_quadrant`.
 
 Os testes do adaptador SIP (`test_sip_adapter.py`) falam ESL a sério (asyncio,
 `127.0.0.1`, porta efémera) com um `FakeEslServer` local que implementa o mesmo
