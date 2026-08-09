@@ -1,15 +1,15 @@
 # MANIFEST — dobragem PT dos minijogos (2026-08-09)
 
 Cada linha é um ficheiro do jogo que foi substituído (WAV instalado na BigFile).
-Origem: 15 gravações de estúdio (11 aproveitadas) mais 1 corte directo do
-episódio PT. As gravações não instaladas (4 de 15) estão descritas na secção
+Origem: 16 gravações de estúdio (12 aproveitadas) mais 1 corte directo do
+episódio PT. As gravações não instaladas (4 de 16) estão descritas na secção
 "Não instaladas" mais abaixo, com o motivo — os ficheiros do jogo
 correspondentes ficaram em espanhol.
 
 Formato de todos os WAV: `pcm_s16le`, mono, 44100 Hz — igual ao original,
 confirmado por `ffprobe` antes de converter.
 
-## Instaladas (12 falas: 11 das gravações + 1 do episódio)
+## Instaladas (13 falas: 12 das gravações + 1 do episódio)
 
 | ficheiro do jogo | gravação de origem (~/Downloads) | duração original | duração final | atempo | transcrição confirmada (whisper -l pt) |
 |---|---|---|---|---|---|
@@ -25,6 +25,7 @@ confirmado por `ffprobe` antes de converter.
 | `RopeOutroData/speak/002-06.wav` | `acho que pode ser perigoso.mp4` | 4.458s | 4.458s | não | «Hum, isto vai ser renhido!» — adaptação, não tradução literal (ver nota abaixo) |
 | `ForestData/speaks/005-05.wav` | `Vá lá! É a tua última oportunidade..mp4` | 4.050s | 4.050s | não | «Continua lentinho e vais de carrinho!» — adaptação (ver nota abaixo) |
 | `ForestData/speaks/005-03.wav` | `Não sejas lento Estou pronto para ir.mp4` | 3.669s | 3.668s | não | «Não seja esmolingão, joga com o coração!» — adaptação (ver nota abaixo) |
+| `ForestData/speaks/005-12.wav` | `Trolli-drit, trolli-drata.mp4` (fala nos últimos 4s de um ficheiro de 111s) | 4.450s | 4.352s | não | «[Está] tramado! Mas este jogo está acabado!» — o whisper devolve «É gramado», normal em sílabas sem sentido, mas o fecho bate certo com o espanhol («¡Este juego está a capur!») e rima como as outras adaptações. A ladainha «trolli-drit, trolli-drata, trolli-drut» do original não foi mantida |
 
 **Nota sobre as três adaptações (002-06, 005-05, 005-03).** Estas tinham sido
 retidas por o texto gravado não bater com a proposta do guião. Não era erro: o
@@ -32,7 +33,7 @@ Paulo confirmou que o estúdio adaptou em vez de traduzir à letra — o espanho
 o português dizem coisas diferentes de propósito, com o mesmo sentido de cena.
 Instaladas por decisão dele. O que continua a mandar é só a duração.
 
-Nove das onze gravações foram recortadas por deteção de silêncio (`silencedetect`, vários limiares
+Dez das doze gravações foram recortadas por deteção de silêncio (`silencedetect`, vários limiares
 entre -30dB e -8dB conforme o ficheiro) para isolar a fala, com margem mínima
 natural. As 4 da caverna vinham em ficheiros de ~80–94s com muito silêncio à
 volta e, nos 5 ficheiros de 94s, uma frase solta e recorrente no fim
@@ -40,7 +41,7 @@ volta e, nos 5 ficheiros de 94s, uma frase solta e recorrente no fim
 do corte em todos os casos. As duas restantes (`005-05`, `005-03`) já vinham
 justas, sem silêncio a cortar, e entraram inteiras.
 
-## Não instaladas (4 de 15) — ficheiros do jogo continuam em espanhol
+## Não instaladas (4 de 16) — ficheiros do jogo continuam em espanhol
 
 Nenhuma das quatro ficou de fora por causa do texto: três são impossíveis de
 encaixar no tempo e uma é um ficheiro repetido.
@@ -55,7 +56,7 @@ encaixar no tempo e uma é um ficheiro repetido.
 ## Falas do jogo que continuam em espanhol (das 21 no total)
 
 Floresta (`ForestData/speaks/`):
-- `005-02`, `005-12` — não fazem parte das 15 gravações entregues.
+- `005-02` — não faz parte das gravações entregues.
   (`005-01` também não fazia, mas foi resolvido pelo corte do episódio PT — ver
   tabela das instaladas.)
 - `005-04` — a gravação entregue é cópia byte-a-byte da de `005-11`; não existe
@@ -67,7 +68,7 @@ Caverna (`RopeOutroData/speak/`):
 - `002-09` — gravação entregue mas não cabe no tempo exigido (ver tabela acima).
 - `002-10`, `002-11` — gritos, mantêm-se sempre o original (língua neutra).
 
-Total: 9 das 21 falas continuam em espanhol — 2 não fornecidas, 4 gritos (que
+Total: 8 das 21 falas continuam em espanhol — 1 não fornecida, 4 gritos (que
 ficam bem no original em qualquer língua), 2 que não cabem no tempo (`005-07`,
 `002-09`) e 1 sem gravação própria (`005-04`).
 
