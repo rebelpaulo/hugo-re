@@ -61,9 +61,22 @@ class Game:
 
         fs = pygame.FULLSCREEN if Config.SCR_FULLSCREEN or "FULLSCREEN" in os.environ else 0
         fs |= pygame.OPENGL | pygame.DOUBLEBUF
-        pygame.display.set_mode((Config.SCR_WIDTH, Config.SCR_HEIGHT), fs)
+        # Em ecrã inteiro pede-se a resolução do ambiente de trabalho ((0,0) em
+        # SDL2), não 640x480: o quadro é sempre desenhado numa Surface de
+        # 640x480 e é o shader que a estica até à janela, portanto o que muda
+        # aqui é só o tamanho do alvo.
+        pygame.display.set_mode((0, 0) if fs & pygame.FULLSCREEN
+                                else (Config.SCR_WIDTH, Config.SCR_HEIGHT), fs)
         display = pygame.Surface((Config.SCR_WIDTH, Config.SCR_HEIGHT))
         ctx = moderngl.create_context(310)
+
+        # Caixa 4:3 centrada, com barras pretas — sem isto o shader estica os
+        # 640x480 até encher o ecrã e num painel 16:9 o Hugo sai gordo. Num
+        # LED wall isso nota-se de longe.
+        win_w, win_h = pygame.display.get_surface().get_size()
+        scale = min(win_w / Config.SCR_WIDTH, win_h / Config.SCR_HEIGHT)
+        view_w, view_h = int(Config.SCR_WIDTH * scale), int(Config.SCR_HEIGHT * scale)
+        ctx.viewport = ((win_w - view_w) // 2, (win_h - view_h) // 2, view_w, view_h)
 
         quad_buffer = ctx.buffer(data=array('f', [
             -1.0, 1.0, 0.0, 0.0,
@@ -178,8 +191,29 @@ class Game:
             for i in range(4):
                 display.blit(screens[i], self.positions[i])
 
+            # Quem está sem jogador e o que a fila vai dizendo — lido antes do
+            # logo porque o logo depende disto (ver a seguir). O modo (web/sip)
+            # vem do bridge na própria mensagem "slots" (ver udp_input.py); sem
+            # bridge a correr, "mode" nem existe e o convite web com QR é a
+            # degradação certa.
+            slots = udp_input.get_slots()
+            occupied = set(slots["occupied"]) if slots else set()
+            queue_len = slots["queue_len"] if slots else 0
+            mode = slots["mode"] if slots else "web"
+
             if not global_state.any_playing:
-                display.blit(logo, (0,0))
+                # O logo de idle é uma imagem opaca de ecrã inteiro: tapava os
+                # quatro vídeos de attract, e por isso quem passava via um
+                # cartaz parado com QRs em cima em vez do jogo a mexer. Passa a
+                # sair só nos quadrantes que não têm convite — onde há QR,
+                # vê-se o vídeo por trás. Com os quatro lugares livres (o caso
+                # normal em idle) o logo não aparece de todo, que é o que se
+                # quer: o ecrã grande mostra jogo, e a marca está no próprio
+                # vídeo de attract.
+                for i in range(4):
+                    if i in occupied:
+                        display.blit(logo, self.positions[i],
+                                     pygame.Rect(*self.positions[i], 320, 240))
             else:
                 for i in range(4):
                     if phone_events[i].any_set():
@@ -201,15 +235,8 @@ class Game:
                         if dt > Config.EFFECT_DURATION_ORB:
                             self.effective_attacks.remove(attack)
 
-            # Convite nos quadrantes sem jogador — por cima de tudo, incluindo
-            # o logo de idle, para nunca ficar escondido. O modo (web/sip)
-            # vem do bridge na própria mensagem "slots" (ver udp_input.py);
-            # sem bridge a correr, "mode" nem existe e o convite web com QR
-            # é a degradação certa.
-            slots = udp_input.get_slots()
-            occupied = set(slots["occupied"]) if slots else set()
-            queue_len = slots["queue_len"] if slots else 0
-            mode = slots["mode"] if slots else "web"
+            # Convite nos quadrantes sem jogador — por cima de tudo, para
+            # nunca ficar escondido (os `slots` já foram lidos acima).
             for i in range(4):
                 if i not in occupied:
                     invite_overlay.draw(display, self.positions[i], global_state.frame_time - self.start_time, queue_len, mode)
@@ -239,6 +266,9 @@ class Game:
         return tex
 
     def render_frame(self, ctx, display, program, render_object, any_playing):
+        # Limpa fora da caixa 4:3 — senão as barras ficam com lixo do buffer
+        # anterior em vez de pretas.
+        ctx.clear(0.0, 0.0, 0.0)
         frame_tex = self.surf_to_texture(ctx, display)
         frame_tex.use(0)
         program['tex'] = 0

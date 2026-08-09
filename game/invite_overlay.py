@@ -34,7 +34,11 @@ QUAD_W, QUAD_H = 320, 240
 QR_PATH = "resources/images/qr_lobby.png"
 QR_SIZE = 150  # pedido: pelo menos ~140px no quadrante 320x240
 
-_BG_COLOR = (10, 8, 30, 175)
+# Placa por trás do texto. Não é fundo de quadrante: o vídeo de attract corre
+# por trás e tem de continuar a ver-se (ver `_plate`). Mais opaca do que o
+# antigo fundo de ecrã cheio, porque agora só tem de garantir contraste na
+# faixa onde há letras — e a letra por cima de vídeo a mexer precisa disso.
+_PLATE_COLOR = (10, 8, 30, 205)
 _TITLE_COLOR = (255, 221, 0)     # amarelo néon, ar de noventista
 _SUB_COLOR = (255, 255, 255)
 _QUEUE_COLOR = (0, 229, 255)     # ciano
@@ -75,9 +79,23 @@ def _load_qr():
     return _qr_image
 
 
+def _plate(surface, rect, pad_x=10, pad_y=6):
+    """Placa escura arredondada por trás de um bocado de texto.
+
+    Antes o convite pintava o quadrante todo de escuro; agora só escurece a
+    faixa que tem letras, para o vídeo de attract continuar visível à volta.
+    """
+    plate = pygame.Rect(rect.x - pad_x, rect.y - pad_y,
+                        rect.width + pad_x * 2, rect.height + pad_y * 2)
+    surf = pygame.Surface(plate.size, pygame.SRCALPHA)
+    pygame.draw.rect(surf, _PLATE_COLOR, surf.get_rect(), border_radius=8)
+    surface.blit(surf, plate.topleft)
+
+
 def _draw_centered(surface, font, text, color, y):
     rect = font.get_rect(text)
     x = (QUAD_W - rect.width) // 2
+    _plate(surface, pygame.Rect(x, y, rect.width, rect.height))
     font.render_to(surface, (x, y), text, color)
     return rect.height
 
@@ -93,8 +111,10 @@ def draw(display, position, elapsed, queue_len=0, mode="web"):
     """
     _load_fonts()
 
+    # Superfície transparente: o que fica escuro é só o que se pinta por baixo
+    # do texto e do QR (ver `_plate`). O vídeo de attract vê-se em todo o
+    # resto do quadrante.
     panel = pygame.Surface((QUAD_W, QUAD_H), pygame.SRCALPHA)
-    panel.fill(_BG_COLOR)
 
     if mode == "sip":
         _draw_sip_invite(panel, elapsed)
@@ -164,4 +184,7 @@ def _draw_sip_invite(panel, elapsed):
                       glow_surf.get_rect(), border_radius=10)
     panel.blit(glow_surf, glow_rect.topleft)
 
+    # Placa por baixo do brilho: sem fundo de quadrante, isto é o que garante
+    # que a letra se lê por cima do vídeo de attract a mexer.
+    _plate(panel, pygame.Rect(sub_x, y, sub_rect.width, sub_rect.height))
     _sub_font.render_to(panel, (sub_x, y), sub_text, _SUB_COLOR)
