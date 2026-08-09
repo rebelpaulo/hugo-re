@@ -1,0 +1,3 @@
+# Gerada por build-conf.sh a cada arranque — symlinks para a instalação
+# Homebrew local, não faz sentido versionar.
+/conf/

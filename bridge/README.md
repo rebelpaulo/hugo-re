@@ -1,10 +1,13 @@
-# Bridge — núcleo de activação + servidor web
+# Bridge — núcleo de activação + servidor web + SIP
 
 Este directório contém a parte comum às entradas web e SIP (`slot_manager.py`,
-`emitter.py`) e, agora, o servidor HTTP/WebSocket que liga a webapp ao `SlotManager`
-(`adapters/web_adapter.py`, `main.py`, `qr.py`) e o router de áudio que leva o som do
-jogo ao telemóvel de cada jogador (`audio_router.py`). Não contém SIP nem integração
-ARI — isso é o B3.
+`emitter.py`), o servidor HTTP/WebSocket que liga a webapp ao `SlotManager`
+(`adapters/web_adapter.py`, `main.py`, `qr.py`), o router de áudio que leva o som do
+jogo ao telemóvel de cada jogador (`audio_router.py`), e agora também os telefones
+físicos: o adaptador SIP (`adapters/sip_adapter.py`) e a configuração do FreeSWITCH
+que o alimenta (`freeswitch/`, ver `bridge/freeswitch/README.md`). Sem Docker, sem
+Asterisk/ARI — FreeSWITCH nativo (Homebrew), decisão tomada e verificada antes deste
+trabalho.
 
 ## Arrancar o bridge a sério
 
@@ -145,6 +148,87 @@ O envio de `emitter.send_slots(...)` para o jogo já é feito pelo próprio `Slo
 sempre que a ocupação ou a fila mudam — o adaptador não precisa de código extra para
 isso.
 
+## O adaptador SIP (`adapters/sip_adapter.py`)
+
+O equivalente do `WebBridge` do lado dos telefones físicos: liga-se ao Event Socket
+(ESL) do FreeSWITCH por socket puro (`asyncio.open_connection`, biblioteca padrão —
+sem `python-ESL`, ver o cabeçalho do próprio ficheiro para a justificação), subscreve
+`CHANNEL_ANSWER`, `DTMF`, `CHANNEL_HANGUP_COMPLETE`, e traduz:
+
+- chamada atendida → `connect(source_id, "sip")` + `handle_event(source_id, "offhook")`.
+  `connect()` já pede lugar sozinho (chama `_request_slot` internamente); há também
+  uma chamada a `request_slot()` a seguir, sempre um no-op nesse ponto, mantida só por
+  simetria com o resto do adaptador.
+- `DTMF` → `press_0`..`press_9`, `press_star`, `press_pound` (mesma tabela que o
+  adaptador web).
+- fim de chamada → `handle_event(source_id, "hungup")` + `disconnect(source_id)`.
+
+**Identificação pelo destino, não pelo caller ID**: `source_id` é `sip:<extensão
+marcada>` (`Caller-Destination-Number` do evento `CHANNEL_ANSWER`), não o caller ID —
+que em chamada IP directa não é de fiar (pode vir vazio ou igual em todos os
+telefones). Cada telefone físico tem de marcar um alvo distinto (ver
+`bridge/freeswitch/README.md`); se dois colidirem ao mesmo tempo (configuração
+errada), o adaptador desambigua com o UUID da chamada em vez de perder a segunda
+linha em silêncio.
+
+**Reconexão automática com backoff**: se o ESL cair (FreeSWITCH reiniciado, rede
+abaixo), `run()` regista o erro, espera com backoff exponencial (1s, 2s, 4s... até
+30s, a repetir) e tenta outra vez — para sempre, até `stop()`. Logo que reconecta,
+`api show channels as json` sincroniza os dois lados nos dois sentidos: uma chamada
+que o adaptador achava activa mas que já não existe no FreeSWITCH (desligou às
+escuras) liberta o slot sozinha; uma chamada activa no FreeSWITCH que o adaptador
+nunca viu atender (chegou e foi atendida enquanto o ESL estava em baixo) entra no
+`SlotManager` mesmo assim, sem esperar por um evento que não vai voltar a chegar. É
+isto que evita telefones "mortos em silêncio" depois de uma queda do ESL.
+
+**Deduplicação**: não há lógica de deduplicação no adaptador — é toda do
+`SlotManager` (`dedup_window_ms`, ver secção "Interface para B2 e B3" acima), que o
+adaptador atravessa sem alterar. Prova (`bridge/test_sip_adapter.py`,
+`test_dtmf_dedup_30ms_collapses_100ms_does_not`): dois `DTMF` iguais empurrados pelo
+caminho real do adaptador a 30ms de intervalo contam como um; a 100ms contam como
+dois.
+
+### Prova de chamada real (baresip)
+
+Sem telefone físico disponível (ver `bridge/freeswitch/README.md`), a prova foi feita
+com [baresip](https://github.com/baresip/baresip) (Homebrew, arm64) como softphone
+SIP a sério, contra um FreeSWITCH a sério com esta configuração, e o
+`bridge/main.py` a sério em `input_mode: sip`:
+
+1. `./scripts/macos/run-sip.sh` — FreeSWITCH pronto, 4 perfis `RUNNING`.
+2. `bridge/main.py --config <cópia com input_mode: sip>` — liga ao ESL
+   (`bridge.sip_adapter: ESL ligado a 127.0.0.1:8021`).
+3. `baresip -f <perfil de teste> -e "/dial sip:9001@192.168.1.198"` — chamada
+   IP directa a sério, sem registo.
+4. Confirmado, com um socket UDP a fazer de "jogo" a escutar em `127.0.0.1:9100`
+   (o mesmo endereço que `bridge/main.py` usa de verdade):
+   - `{"type":"slots","occupied":[0],...,"mode":"sip"}` seguido de
+     `{"player":0,"event":"offhook"}` — a chamada atendida chegou ao `SlotManager`,
+     com o campo `mode` a confirmar que veio pelo caminho SIP.
+   - Ao desligar a chamada (`fs_cli -x "uuid_kill <uuid>"`, já que o `-t` do baresip
+     mata o processo sem BYE): `{"player":0,"event":"hungup"}` seguido de
+     `{"type":"slots","occupied":[],...}`.
+   - O evento `CHANNEL_ANSWER` visto no ESL trouxe `Caller-Destination-Number` igual
+     ao número marcado (`9001`, `9002`, `9004`... consoante o teste) e
+     `Caller-Caller-ID-Number` diferente — confirma a identificação pelo destino.
+5. `apply-inbound-acl: domains` do perfil vanilla rejeitava toda a ligação
+   (`sofia.c:10679 IP ... Rejected by acl "domains"`) — só descoberto e corrigido
+   (para `localnet.auto`) por causa desta prova a sério; ver
+   `bridge/freeswitch/README.md`.
+
+**Honestidade sobre DTMF por áudio real**: enviar dígitos DTMF a sério através do
+baresip, sem interface gráfica, não foi conseguido no tempo disponível — a interface
+de controlo do baresip usada nos testes (`cons`/`ctrl_tcp` por TCP) não expôs um
+comando de DTMF fiável para scriptar (só teclas interactivas, pensadas para um
+utilizador humano a escrever ao vivo). A chamada real, o atender, e o desligar estão
+provados ponta a ponta como descrito acima; a tradução de `DTMF` e a deduplicação a
+30/100ms estão provadas com eventos ESL injectados a sério no `SipAdapter` real
+(`bridge/test_sip_adapter.py`) — o `FakeEslServer` desse ficheiro fala o mesmo
+protocolo de texto do FreeSWITCH por socket a sério, só o extremo de rede (o
+FreeSWITCH em si) é que é substituído por um dobre determinístico, exactamente para
+poder controlar o intervalo entre dígitos ao milissegundo, coisa que nem um telefone
+real garante.
+
 ## Áudio: o som sai no telemóvel de cada jogador (`audio_router.py`)
 
 O jogo já separa o áudio por jogador — `game/game.py` dá a cada `GameData` a sua porta
@@ -207,6 +291,7 @@ A partir da raiz do repositório:
 ```sh
 .venv/bin/python bridge/test_bridge.py         # núcleo: SlotManager + UdpEmitter
 .venv/bin/python bridge/test_web_adapter.py    # servidor web: WebSocket a sério
+.venv/bin/python bridge/test_sip_adapter.py    # adaptador SIP: ESL a sério contra um FakeEslServer
 .venv/bin/python bridge/test_audio_router.py   # router de áudio: UDP + WebSocket + HTTP
 .venv/bin/python bridge/qr.py                  # auto-teste do gerador de QR
 ```
@@ -227,3 +312,16 @@ continua a ser 15s).
 antes de qualquer resposta a `hello` (ver secção `input_mode` acima); `test_web_adapter.py`
 já lê/ignora esse `config` inicial antes de verificar a resposta ao `hello` (ver
 `resposta_util()` no próprio ficheiro).
+
+Os testes do adaptador SIP (`test_sip_adapter.py`) falam ESL a sério (asyncio,
+`127.0.0.1`, porta efémera) com um `FakeEslServer` local que implementa o mesmo
+protocolo de texto do FreeSWITCH — cumprimento, `auth`, `event json`, `api show
+channels as json` — e deixa o teste empurrar eventos como se viessem de uma chamada
+real. Confirmam: uma chamada atendida entra pelo destino marcado (não pelo caller
+ID) e gera `offhook`; dois destinos iguais em simultâneo não perdem a segunda linha;
+`DTMF` mapeia para `press_N`/`press_star`/`press_pound`; a deduplicação a 30ms/100ms
+do `SlotManager` atravessa o caminho real do adaptador sem alterações; desligar
+liberta o slot; e uma queda do ESL a meio de uma chamada reconecta sozinha (com
+backoff) e reconcilia o estado nos dois sentidos — ver "O adaptador SIP" acima. A
+prova de uma chamada real com um softphone (fora do alcance de um teste corrível sem
+FreeSWITCH instalado) está documentada em separado, na mesma secção.

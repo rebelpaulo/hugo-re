@@ -41,6 +41,21 @@ bridge:
   # Regra fechada: um telefone nunca expulsa quem já está a jogar.
   sip_preempt: false
 
+# Só lido quando input_mode: sip (acima). Onde está o Event Socket do
+# FreeSWITCH — ver bridge/freeswitch/README.md para a configuração do lado
+# do FreeSWITCH e scripts/macos/run-sip.sh para o arrancar.
+sip:
+  esl_host: 127.0.0.1
+  esl_port: 8021
+  # Password de origem do event_socket.conf.xml — não a mudámos do vanilla
+  # (não é segredo real, é a mesma em qualquer instalação por omissão, e o
+  # ESL só está à escuta em 127.0.0.1). Se um dia isso importar, muda aqui
+  # e num override novo de autoload_configs/event_socket.conf.xml juntos.
+  esl_password: ClueCon
+  # Tem de bater certo com o contexto do dialplan/perfil SIP — ver
+  # bridge/freeswitch/overrides/dialplan/hugo-lan.xml.
+  context: hugo-lan
+
 # Áudio do jogo: cada jogador ouve no seu telemóvel (via WebSocket) em vez das
 # colunas do computador. Ver bridge/audio_router.py e bridge/README.md.
 audio:

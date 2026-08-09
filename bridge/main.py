@@ -19,10 +19,11 @@ from pathlib import Path
 import yaml
 from aiohttp import web
 
+from adapters.sip_adapter import SipAdapter
 from adapters.web_adapter import create_app, load_input_mode
 from emitter import UdpEmitter
 from qr import generate_qr
-from slot_manager import SlotManager
+from slot_manager import Decision, SlotManager
 
 
 LOGGER = logging.getLogger("bridge.main")
@@ -101,6 +102,7 @@ async def run(config_path: Path) -> None:
 
     audio_config = config.get("audio")
     audio_mode = (audio_config or {}).get("mode", "desligado")
+    sip_config = config.get("sip") or {}
 
     banner = "=" * 64
     print(banner)
@@ -108,6 +110,12 @@ async def run(config_path: Path) -> None:
     print(f"  QR:     {QR_OUTPUT} ({width}x{height}px)")
     print(f"  JOGO:   UDP {emitter.host}:{emitter.port} (não muda, fica em loopback)")
     print(f"  AUDIO:  modo={audio_mode}")
+    if input_mode == "sip":
+        print(
+            f"  SIP:    ESL {sip_config.get('esl_host', '127.0.0.1')}:"
+            f"{sip_config.get('esl_port', 8021)} (contexto {sip_config.get('context', 'hugo-lan')})"
+        )
+        print("          ver scripts/macos/run-sip.sh para arrancar o FreeSWITCH")
     print(banner)
 
     app, route = create_app(manager, audio_config=audio_config, input_mode=input_mode)
@@ -115,6 +123,31 @@ async def run(config_path: Path) -> None:
     await runner.setup()
     site = web.TCPSite(runner, host, port)
     await site.start()
+
+    # Em input_mode=sip liga-se também o adaptador SIP — o servidor
+    # HTTP/WebSocket acima continua a correr sempre (é o que a webapp
+    # legada, se lá alguém cair, precisa para mostrar o aviso), mas quem
+    # traz os telefones para o SlotManager é este.
+    sip_adapter: SipAdapter | None = None
+    sip_task: asyncio.Task | None = None
+    if input_mode == "sip":
+
+        async def sip_route(decisions: list[Decision]) -> None:
+            # Ainda sem áudio para o auscultador (ver bridge/README.md) —
+            # por agora só regista; o desenho não fecha a porta a
+            # encaminhar isto para lá quando o áudio SIP existir.
+            for decision in decisions:
+                LOGGER.debug("SIP decision: %s", decision)
+
+        sip_adapter = SipAdapter(
+            manager,
+            sip_route,
+            host=sip_config.get("esl_host", "127.0.0.1"),
+            port=int(sip_config.get("esl_port", 8021)),
+            password=sip_config.get("esl_password", "ClueCon"),
+            context=sip_config.get("context", "hugo-lan"),
+        )
+        sip_task = asyncio.create_task(sip_adapter.run())
 
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -127,6 +160,9 @@ async def run(config_path: Path) -> None:
     LOGGER.info("Sinal recebido — a desligar o bridge...")
     tick_task.cancel()
     await asyncio.gather(tick_task, return_exceptions=True)
+    if sip_adapter is not None and sip_task is not None:
+        await sip_adapter.stop()
+        await asyncio.gather(sip_task, return_exceptions=True)
     await route(manager.end_match())
     await runner.cleanup()
     LOGGER.info("Bridge desligado.")
