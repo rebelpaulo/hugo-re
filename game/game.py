@@ -20,6 +20,7 @@ from tv_show.tv_show_parent import TvShowParent
 from phone_events import PhoneEvents
 from tv_show.tv_show_resources import TvShowResources
 from tween import Tween
+from udp_input import UdpInput
 import global_state
 
 class Game:
@@ -100,6 +101,7 @@ class Game:
         self.pos_by_country = {tv_show.country: self.positions[idx] for idx, tv_show in enumerate(self.tv_shows)}
 
         clock = pygame.time.Clock()
+        udp_input = UdpInput()
 
         running = True
         while running:
@@ -135,6 +137,8 @@ class Game:
                             phone_events[i].press_8 = True
                         if event.key in Config.BTN_9[i]:
                             phone_events[i].press_9 = True
+
+            udp_input.drain_into(phone_events)
 
             pre_render = time.time()
 

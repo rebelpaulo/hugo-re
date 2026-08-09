@@ -1,0 +1,20 @@
+# Endereço UDP onde o jogo escuta. Manter em loopback na activação local.
+game:
+  host: 127.0.0.1
+  port: 9100
+
+bridge:
+  # Número de quadrantes/jogadores simultâneos do jogo.
+  slots: 4
+
+  # Um jogador sem actividade perde o slot ao fim deste tempo.
+  inactivity_timeout_seconds: 120
+
+  # Prazo dado a uma pessoa da fila web para aceitar a sua vez.
+  offer_timeout_seconds: 15
+
+  # Eventos iguais do mesmo jogador dentro desta janela são duplicados.
+  dedup_window_ms: 60
+
+  # Regra fechada: um telefone nunca expulsa quem já está a jogar.
+  sip_preempt: false

@@ -39,7 +39,14 @@ class Config:
     BTN_9 = [(pygame.K_d,), (pygame.K_h,), (pygame.K_l,), (pygame.K_KP9, pygame.K_n)]
     BTN_0 = [(pygame.K_z,), (pygame.K_x,), (pygame.K_c,), (pygame.K_KP0, pygame.K_b)]
 
-    COUNTRIES = ["ar", "cl", "dn", "fr"]
+    COUNTRIES = ["pt1", "pt2", "pt3", "pt4"]
+
+    # Os 4 quadrantes precisam de chaves distintas em COUNTRIES para que os
+    # dicionários de recursos em TvShowResources (indexados por país) lhes
+    # dêem objetos Video/áudio independentes. Este mapa diz a cada chave qual
+    # a pasta de assets a carregar — os quatro quadrantes PT apontam para a
+    # mesma pasta "pt", mas cada um fica com o seu próprio Video.
+    COUNTRY_ASSETS = {"pt1": "pt", "pt2": "pt", "pt3": "pt", "pt4": "pt"}
 
     GAMES = {
         "Forest": {
