@@ -111,29 +111,29 @@ class Game:
 
                 if event.type == pygame.KEYDOWN:
                     for i in range(4):
-                        if event.key == Config.BTN_OFF_HOOK[i]:
+                        if event.key in Config.BTN_OFF_HOOK[i]:
                             phone_events[i].offhook = True
-                        if event.key == Config.BTN_HUNG_UP[i]:
+                        if event.key in Config.BTN_HUNG_UP[i]:
                             phone_events[i].hungup = True
-                        if event.key == Config.BTN_0[i]:
+                        if event.key in Config.BTN_0[i]:
                             phone_events[i].press_0 = True
-                        if event.key == Config.BTN_1[i]:
+                        if event.key in Config.BTN_1[i]:
                             phone_events[i].press_1 = True
-                        if event.key == Config.BTN_2[i]:
+                        if event.key in Config.BTN_2[i]:
                             phone_events[i].press_2 = True
-                        if event.key == Config.BTN_3[i]:
+                        if event.key in Config.BTN_3[i]:
                             phone_events[i].press_3 = True
-                        if event.key == Config.BTN_4[i]:
+                        if event.key in Config.BTN_4[i]:
                             phone_events[i].press_4 = True
-                        if event.key == Config.BTN_5[i]:
+                        if event.key in Config.BTN_5[i]:
                             phone_events[i].press_5 = True
-                        if event.key == Config.BTN_6[i]:
+                        if event.key in Config.BTN_6[i]:
                             phone_events[i].press_6 = True
-                        if event.key == Config.BTN_7[i]:
+                        if event.key in Config.BTN_7[i]:
                             phone_events[i].press_7 = True
-                        if event.key == Config.BTN_8[i]:
+                        if event.key in Config.BTN_8[i]:
                             phone_events[i].press_8 = True
-                        if event.key == Config.BTN_9[i]:
+                        if event.key in Config.BTN_9[i]:
                             phone_events[i].press_9 = True
 
             pre_render = time.time()
