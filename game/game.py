@@ -21,8 +21,14 @@ from phone_events import PhoneEvents
 from tv_show.tv_show_resources import TvShowResources
 from tween import Tween
 from udp_input import UdpInput
+import fullscreen_button
 import global_state
 import invite_overlay
+
+# Segundos que o cursor e o botão de ecrã inteiro ficam à vista depois de o
+# rato parar. Curto o suficiente para não ficar pousado no LED wall, longo o
+# suficiente para dar tempo de apontar e carregar.
+POINTER_LINGER = 3.0
 
 class Game:
     positions = [
@@ -70,13 +76,8 @@ class Game:
         display = pygame.Surface((Config.SCR_WIDTH, Config.SCR_HEIGHT))
         ctx = moderngl.create_context(310)
 
-        # Caixa 4:3 centrada, com barras pretas — sem isto o shader estica os
-        # 640x480 até encher o ecrã e num painel 16:9 o Hugo sai gordo. Num
-        # LED wall isso nota-se de longe.
-        win_w, win_h = pygame.display.get_surface().get_size()
-        scale = min(win_w / Config.SCR_WIDTH, win_h / Config.SCR_HEIGHT)
-        view_w, view_h = int(Config.SCR_WIDTH * scale), int(Config.SCR_HEIGHT * scale)
-        ctx.viewport = ((win_w - view_w) // 2, (win_h - view_h) // 2, view_w, view_h)
+        self.fullscreen = bool(fs & pygame.FULLSCREEN)
+        self._fit_viewport(ctx)
 
         quad_buffer = ctx.buffer(data=array('f', [
             -1.0, 1.0, 0.0, 0.0,
@@ -95,6 +96,9 @@ class Game:
         self.render_frame(ctx, display, program, render_object, False)
 
         pygame.mouse.set_visible(False)
+        # Instante até ao qual o cursor e o botão de ecrã inteiro ficam à
+        # vista; renovado a cada movimento do rato (ver o ciclo de eventos).
+        self.pointer_until = 0.0
         pygame.display.set_caption(Config.TITLE)
         pygame.font.init()
 
@@ -126,7 +130,21 @@ class Game:
             phone_events = [PhoneEvents() for _ in range(4)]
 
             for event in pygame.event.get():
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == Config.BTN_EXIT) or (event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
+                # Rato parado é rato escondido: o botão de ecrã inteiro e o
+                # cursor só aparecem enquanto alguém está mesmo a mexer, para
+                # não ficarem pousados no LED wall durante o evento.
+                if event.type == pygame.MOUSEMOTION:
+                    self.pointer_until = global_state.frame_time + POINTER_LINGER
+                    pygame.mouse.set_visible(True)
+
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if fullscreen_button.hit(self._surface_pos(event.pos)):
+                        self._toggle_fullscreen(ctx)
+                        self.pointer_until = global_state.frame_time + POINTER_LINGER
+                        continue  # este clique é do botão, não é para sair
+                    running = False
+
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == Config.BTN_EXIT):
                     running = False
 
                 if event.type == pygame.KEYDOWN:
@@ -235,6 +253,11 @@ class Game:
                         if dt > Config.EFFECT_DURATION_ORB:
                             self.effective_attacks.remove(attack)
 
+            if global_state.frame_time < self.pointer_until:
+                fullscreen_button.draw(display, self.fullscreen)
+            elif pygame.mouse.get_visible():
+                pygame.mouse.set_visible(False)
+
             # Convite nos quadrantes sem jogador — por cima de tudo, para
             # nunca ficar escondido (os `slots` já foram lidos acima).
             for i in range(4):
@@ -264,6 +287,42 @@ class Game:
         tex.swizzle = 'BGRA'
         tex.write(surf.get_view('1'))
         return tex
+
+    def _fit_viewport(self, ctx):
+        """Caixa 4:3 centrada na janela, com barras aos lados.
+
+        Sem isto o shader estica os 640x480 até encher a janela e num painel
+        16:9 o Hugo sai gordo — num LED wall nota-se de longe. Chamada ao
+        arrancar e outra vez sempre que se entra ou sai de ecrã inteiro.
+
+        `get_window_size()` é a medida boa: em ecrã inteiro o
+        `get_surface().get_size()` continua a dizer 640x480 (é o tamanho
+        lógico pedido), e o viewport do moderngl também não se actualiza
+        sozinho.
+        """
+        win_w, win_h = pygame.display.get_window_size()
+        scale = min(win_w / Config.SCR_WIDTH, win_h / Config.SCR_HEIGHT)
+        view_w, view_h = int(Config.SCR_WIDTH * scale), int(Config.SCR_HEIGHT * scale)
+        self.viewport = ((win_w - view_w) // 2, (win_h - view_h) // 2, view_w, view_h)
+        ctx.viewport = self.viewport
+
+    def _surface_pos(self, window_pos):
+        """Ponto da janela -> ponto da superfície 640x480 do jogo.
+
+        O rato dá coordenadas da janela; o que está desenhado vive numa caixa
+        centrada mais pequena. Sem esta conversão o botão não estaria onde
+        parece estar em ecrã inteiro. (A caixa é centrada, portanto a margem
+        de cima é igual à de baixo e não é preciso lidar com o eixo Y do
+        OpenGL estar ao contrário do da janela.)
+        """
+        view_x, view_y, view_w, view_h = self.viewport
+        return ((window_pos[0] - view_x) * Config.SCR_WIDTH / view_w,
+                (window_pos[1] - view_y) * Config.SCR_HEIGHT / view_h)
+
+    def _toggle_fullscreen(self, ctx):
+        pygame.display.toggle_fullscreen()
+        self.fullscreen = not self.fullscreen
+        self._fit_viewport(ctx)
 
     def render_frame(self, ctx, display, program, render_object, any_playing):
         # Limpa fora da caixa 4:3 — senão as barras ficam com lixo do buffer
