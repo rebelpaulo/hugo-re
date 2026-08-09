@@ -26,6 +26,12 @@ if [ "$ARCH" != "arm64" ]; then
   exit 1
 fi
 
+PYTHON_VERSION="$("$PYTHON_BIN" -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')"
+if [ "$PYTHON_VERSION" != "3.13" ]; then
+  echo "ERRO: $PYTHON_BIN reporta Python $PYTHON_VERSION, esperava 3.13." >&2
+  exit 1
+fi
+
 if ! "$PYTHON_BIN" -c 'import _tkinter' >/dev/null 2>&1; then
   echo "ERRO: o módulo _tkinter não está disponível neste Python." >&2
   echo "Sem ele, o import de pyvidplayer2 bloqueia o arranque do jogo." >&2
@@ -46,7 +52,13 @@ if [ -d "$VENV_DIR" ]; then
     echo "Está provavelmente contaminado por um python x86_64. Apaga '$VENV_DIR' à mão e corre este script outra vez." >&2
     exit 1
   fi
-  echo "   .venv existente é arm64, ok."
+  VENV_VERSION="$("$VENV_DIR/bin/python3" -c 'import sys; print(".".join(map(str, sys.version_info[:2])))' 2>/dev/null || echo "?")"
+  if [ "$VENV_VERSION" != "3.13" ]; then
+    echo "AVISO: o .venv existente reporta Python '$VENV_VERSION' (esperava 3.13)." >&2
+    echo "Apaga '$VENV_DIR' à mão e corre este script outra vez." >&2
+    exit 1
+  fi
+  echo "   .venv existente é arm64 e usa Python 3.13, ok."
 else
   echo "-- a criar .venv com $PYTHON_BIN --"
   "$PYTHON_BIN" -m venv "$VENV_DIR"

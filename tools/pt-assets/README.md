@@ -1,7 +1,7 @@
 # Clips portugueses do Hugo
 
 1. Descarrega o master e guarda-o como `../../../hugo-assets/pt-master.mkv` (ou muda `source` em `cuts.yaml`).
-2. Afina os seis pares `start`/`end` em `cuts.yaml`; os valores incluídos são apenas um primeiro palpite.
+2. Revê os seis pares `start`/`end` em `cuts.yaml`; foram localizados pelas legendas e confirmados por frame e pela forma de onda. Cinco dos seis clips ainda precisam de afinação porque atravessam cortes de câmara.
 3. Corre `./build.sh` para gerar os AVI e WAV; usa `./build.sh --dry-run` para ver os comandos sem escrever ficheiros.
 4. Corre `./preview.sh` e abre `preview/contact-sheet.png` e `preview/clips-pt.mp4`.
 5. Repete os passos 2–4 até nenhuma fala ou imagem ficar cortada.

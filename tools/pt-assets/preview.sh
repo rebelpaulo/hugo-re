@@ -11,6 +11,7 @@ PYTHON="${PYTHON:-$SCRIPT_DIR/../../.venv/bin/python}"
 # com FFMPEG=/caminho/ffmpeg ou FFPROBE=/caminho/ffprobe.
 FFMPEG="${FFMPEG:-$(command -v ffmpeg 2>/dev/null || true)}"
 FFPROBE="${FFPROBE:-$(command -v ffprobe 2>/dev/null || true)}"
+FONT_FILE="${FONT_FILE:-/System/Library/Fonts/Supplemental/Arial.ttf}"
 CUTS_FILE="$SCRIPT_DIR/cuts.yaml"
 EXPECTED=(attract_demo hello_hello press_5 scylla_cave you_lost have_luck)
 
@@ -24,6 +25,7 @@ fi
 [[ -x "$PYTHON" ]] || { echo "Erro: não encontrei o Python ARM em $PYTHON." >&2; exit 1; }
 [[ -n "$FFMPEG" && -x "$FFMPEG" ]] || { echo "Erro: não encontrei o ffmpeg (define FFMPEG=/caminho/para/ffmpeg)." >&2; exit 1; }
 [[ -n "$FFPROBE" && -x "$FFPROBE" ]] || { echo "Erro: não encontrei o ffprobe (define FFPROBE=/caminho/para/ffprobe)." >&2; exit 1; }
+[[ -f "$FONT_FILE" ]] || { echo "Erro: não encontrei a fonte de macOS em $FONT_FILE." >&2; exit 1; }
 "$FFMPEG" -version >/dev/null 2>&1 || { echo "Erro: $FFMPEG não corre." >&2; exit 1; }
 "$FFPROBE" -version >/dev/null 2>&1 || { echo "Erro: $FFPROBE não corre." >&2; exit 1; }
 [[ -f "$CUTS_FILE" ]] || { echo "Erro: não encontrei $CUTS_FILE." >&2; exit 1; }
@@ -91,7 +93,7 @@ PY
   for position in $positions; do
     frame="$WORK_DIR/frame-${index}.png"
     "$FFMPEG" -nostdin -hide_banner -loglevel error -y -ss "$position" -i "$OUTPUT_VIDEO/$name.avi" \
-      -frames:v 1 -vf "scale=320:240,drawtext=text='$name':x=8:y=h-th-8:fontsize=22:fontcolor=white:borderw=2:bordercolor=black" \
+      -frames:v 1 -vf "scale=320:240,drawtext=fontfile='$FONT_FILE':text='$name':x=8:y=h-th-8:fontsize=22:fontcolor=white:borderw=2:bordercolor=black" \
       "$frame"
     frame_inputs+=( -i "$frame" )
     layout+=( "$((column * 320))_$((row * 240))" )
@@ -113,7 +115,7 @@ for index in "${!EXPECTED[@]}"; do
   concat_inputs+=( -i "$OUTPUT_VIDEO/$name.avi" -i "$OUTPUT_AUDIO/$name.wav" )
   video_index=$((index * 2))
   audio_index=$((video_index + 1))
-  filter+="[$video_index:v]setpts=PTS-STARTPTS,drawtext=text='$name':x=12:y=12:fontsize=24:fontcolor=white:borderw=2:bordercolor=black,format=yuv420p[v$index];"
+  filter+="[$video_index:v]setpts=PTS-STARTPTS,drawtext=fontfile='$FONT_FILE':text='$name':x=12:y=12:fontsize=24:fontcolor=white:borderw=2:bordercolor=black,format=yuv420p[v$index];"
   filter+="[$audio_index:a]asetpts=PTS-STARTPTS[a$index];"
   concat_refs+="[v$index][a$index]"
 done

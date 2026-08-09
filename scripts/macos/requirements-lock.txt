@@ -6,6 +6,7 @@ numpy==2.5.1
 opencv-python==5.0.0.93
 pycparser==3.0
 pygame==2.6.1
+PyYAML==6.0.3
 pyvidplayer2==0.9.36
 scipy==1.18.0
 sounddevice==0.5.5

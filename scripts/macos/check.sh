@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verificação corrível do ambiente: python arm64, os 7 imports, ffmpeg no
+# Verificação corrível do ambiente: Python 3.13 arm64, os 8 imports, ffmpeg no
 # PATH, e conteúdo sentinela da BigFile. Sai != 0 se faltar algo essencial.
 set -euo pipefail
 
@@ -14,24 +14,65 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 echo "== check.sh: hugo-re (macOS arm64) =="
 echo
 
+validate_assets() {
+  local assets="$1"
+  local missing_sentinels=""
+
+  if [ -z "$assets" ]; then
+    echo "[FALHA] HUGO_ASSETS não está definida e não passaste caminho como argumento."
+    echo "         Define com:"
+    echo "         export HUGO_ASSETS=/caminho/para/BigFile"
+    return 1
+  fi
+  if [ ! -d "$assets" ]; then
+    echo "[FALHA] pasta de assets não encontrada em: $assets"
+    return 1
+  fi
+
+  for sentinel in BoltData ForestData IceCavernData MenuData; do
+    if [ ! -d "$assets/$sentinel" ]; then
+      missing_sentinels="$missing_sentinels $sentinel/"
+    fi
+  done
+  if [ -n "$missing_sentinels" ]; then
+    echo "[FALHA] a pasta não parece ser a BigFile; faltam:$missing_sentinels"
+    echo "         caminho verificado: $assets"
+    return 1
+  fi
+
+  assets="$(cd "$assets" && pwd -P)"
+  echo "[ok]    BigFile validada: $assets"
+}
+
+if [ "${1:-}" = "--validate-assets-only" ]; then
+  validate_assets "${2:-${HUGO_ASSETS:-}}"
+  exit
+fi
+
 # -- 1. venv + arquitetura --------------------------------------------------
 if [ ! -x "$VENV_PY" ]; then
   echo "[FALHA] .venv não encontrado em $REPO_ROOT/.venv (corre scripts/macos/setup.sh)"
   FAIL=1
 else
   ARCH="$("$VENV_PY" -c 'import platform; print(platform.machine())' 2>/dev/null || echo "?")"
-  if [ "$ARCH" = "arm64" ]; then
-    echo "[ok]    .venv é arm64 ($("$VENV_PY" --version 2>&1))"
-  else
+  VERSION="$("$VENV_PY" -c 'import sys; print(".".join(map(str, sys.version_info[:2])))' 2>/dev/null || echo "?")"
+  if [ "$ARCH" != "arm64" ]; then
     echo "[FALHA] .venv reporta arquitetura '$ARCH', esperava 'arm64'"
     FAIL=1
+  fi
+  if [ "$VERSION" != "3.13" ]; then
+    echo "[FALHA] .venv reporta Python '$VERSION', esperava '3.13'"
+    FAIL=1
+  fi
+  if [ "$ARCH" = "arm64" ] && [ "$VERSION" = "3.13" ]; then
+    echo "[ok]    .venv é arm64 e usa Python 3.13 ($("$VENV_PY" --version 2>&1))"
   fi
 fi
 echo
 
-# -- 2. os 7 imports (um processo por módulo, para isolar falhas) -----------
+# -- 2. os 8 imports (um processo por módulo, para isolar falhas) -----------
 echo "-- imports --"
-MODULES=(pygame moderngl pyvidplayer2 sounddevice soundfile numpy scipy)
+MODULES=(pygame moderngl pyvidplayer2 sounddevice soundfile numpy scipy yaml)
 if [ -x "$VENV_PY" ]; then
   for mod in "${MODULES[@]}"; do
     if "$VENV_PY" -c "
@@ -79,29 +120,8 @@ echo
 
 # -- 4. pasta de assets (BigFile) -------------------------------------------
 ASSETS="${1:-${HUGO_ASSETS:-}}"
-if [ -z "$ASSETS" ]; then
-  echo "[FALHA] HUGO_ASSETS não está definida e não passaste caminho como argumento."
-  echo "         Define com:"
-  echo "         export HUGO_ASSETS=/caminho/para/BigFile"
+if ! validate_assets "$ASSETS"; then
   FAIL=1
-elif [ ! -d "$ASSETS" ]; then
-  echo "[FALHA] pasta de assets não encontrada em: $ASSETS"
-  FAIL=1
-else
-  MISSING_SENTINELS=""
-  for sentinel in BoltData ForestData IceCavernData MenuData; do
-    if [ ! -d "$ASSETS/$sentinel" ]; then
-      MISSING_SENTINELS="$MISSING_SENTINELS $sentinel/"
-    fi
-  done
-  if [ -n "$MISSING_SENTINELS" ]; then
-    echo "[FALHA] a pasta não parece ser a BigFile; faltam:$MISSING_SENTINELS"
-    echo "         caminho verificado: $ASSETS"
-    FAIL=1
-  else
-    ASSETS="$(cd "$ASSETS" && pwd -P)"
-    echo "[ok]    BigFile validada: $ASSETS"
-  fi
 fi
 echo
 

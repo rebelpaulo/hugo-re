@@ -64,13 +64,16 @@ Ambos aceitam a BigFile pelo primeiro argumento ou por `$HUGO_ASSETS`.
 
 ## Teclas dos quatro jogadores
 
+Num Mac, as teclas F só chegam ao jogo com «Usar F1, F2, etc. como teclas de
+função padrão» ligado nas Definições do Sistema, ou carregando também em Fn.
+
 | Ação | Jogador 1 | Jogador 2 | Jogador 3 | Jogador 4 |
 |---|---|---|---|---|
 | Atender | F1 | F3 | F5 | F7 |
 | Desligar | F2 | F4 | F6 | F8 |
-| Dígitos 1–3 | 1, 2, 3 | 4, 5, 6 | 7, 8, 9 | Num 1, 2, 3 |
-| Dígitos 4–6 | q, w, e | r, t, y | u, i, o | Num 4, 5, 6 |
-| Dígitos 7–9 | a, s, d | f, g, h | j, k, l | Num 7, 8, 9 |
-| Dígito 0 | z | x | c | Num 0 |
+| Dígitos 1–3 | 1, 2, 3 | 4, 5, 6 | 7, 8, 9 | Num 1/V, Num 2/↑, Num 3/P |
+| Dígitos 4–6 | q, w, e | r, t, y | u, i, o | Num 4/←, Num 5/M, Num 6/→ |
+| Dígitos 7–9 | a, s, d | f, g, h | j, k, l | Num 7/vírgula, Num 8/↓, Num 9/N |
+| Dígito 0 | z | x | c | Num 0/B |
 
 Sair do jogo: F12.

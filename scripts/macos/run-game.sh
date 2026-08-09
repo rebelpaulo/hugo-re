@@ -21,9 +21,8 @@ if [ -z "$ASSETS" ]; then
   exit 1
 fi
 
-if [ ! -d "$ASSETS" ]; then
-  echo "ERRO: a pasta de dados indicada não existe: $ASSETS" >&2
-  echo "Confirma o caminho da BigFile (ainda pode não ter sido descarregada)." >&2
+if ! "$SCRIPT_DIR/check.sh" --validate-assets-only "$ASSETS"; then
+  echo "ERRO: indica a BigFile completa, com os diretórios sentinela acima." >&2
   exit 1
 fi
 
