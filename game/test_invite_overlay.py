@@ -93,4 +93,49 @@ with tempfile.TemporaryDirectory() as tmp:
     ov.draw(ecra, (0, 240), 1.0, queue_len=1, mode="web")
     print("OK 6: desenha com QR, sem QR, e em modo sip")
 
+
+# ---------------------------------------------------------------------------
+# Ecrã de espera do arranque. Existe para ninguém apontar o telemóvel antes de
+# haver código para ler (ver `draw_loading`).
+# ---------------------------------------------------------------------------
+
+ecra = pygame.Surface((640, 480))
+ecra.fill((0, 255, 0))  # faz de vídeo de attract a correr por baixo
+ov.draw_loading(ecra, 1.2)
+
+espreita = sum(
+    1
+    for x in range(0, 640, 4)
+    for y in range(0, 480, 4)
+    if tuple(ecra.get_at((x, y))[:3]) == (0, 255, 0)
+)
+assert espreita == 0, f"{espreita} pixels do jogo ainda visíveis — isto tem de tapar, não velar"
+print("OK 7: o ecrã de espera tapa os quatro quadrantes por completo")
+
+logo, marca = ov._load_loading_art()
+assert logo is not None, f"logo do Hugo não carregou de {ov.LOGO_PATH}"
+assert marca is not None, f"marca do evento não carregou de {ov.BRAND_PATH}"
+# Nada pode sair pelo fundo: a marca já saiu 2px uma vez.
+destino = marca.get_rect(midbottom=(320, 480 - 14))
+assert destino.bottom <= 480, destino
+assert destino.top >= 0, destino
+assert logo.get_width() <= 640 and marca.get_width() <= 640
+print(f"OK 8: logo {logo.get_size()} e marca {marca.get_size()} cabem no ecrã")
+
+# Os pontos andam — sinal de vida enquanto o túnel não sobe.
+def pontos_acesos(t):
+    copia = pygame.Surface((640, 480))
+    ov.draw_loading(copia, t)
+    return pygame.image.tostring(copia, "RGB")
+
+assert pontos_acesos(0.0) != pontos_acesos(0.6), "a animação não mexe"
+print("OK 9: os pontos animam entre frames")
+
+# Sem os ficheiros de arte o ecrã ainda tem de sair, só com texto.
+ov._logo_loaded = False
+ov.LOGO_PATH = "/nao/existe/hugo.png"
+ov.BRAND_PATH = "/nao/existe/revenge.png"
+ov.draw_loading(pygame.Surface((640, 480)), 1.0)
+print("OK 10: sem os logótipos em disco, o ecrã de espera desenha na mesma")
+
 print("Todos os cenários passaram.")

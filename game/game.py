@@ -30,6 +30,11 @@ import invite_overlay
 # suficiente para dar tempo de apontar e carregar.
 POINTER_LINGER = 3.0
 
+# Tecto do ecrã de espera do arranque. O túnel leva uns 30s; isto dá-lhe folga
+# e, passado o tempo, desiste em vez de deixar o ecrã preso — o caso de alguém
+# abrir só o jogo, sem bridge nenhum a correr.
+LOADING_MAX_SECONDS = 90.0
+
 class Game:
     positions = [
         (0, 0),
@@ -253,11 +258,30 @@ class Game:
             elif pygame.mouse.get_visible():
                 pygame.mouse.set_visible(False)
 
-            # Convite nos quadrantes sem jogador — por cima de tudo, para
-            # nunca ficar escondido (os `slots` já foram lidos acima).
-            for i in range(4):
-                if i not in occupied:
-                    invite_overlay.draw(display, self.positions[i], global_state.frame_time - self.start_time, queue_len, mode)
+            # Ecrã de espera enquanto o bridge não tiver escrito o QR — são uns
+            # 30 segundos, o tempo de levantar o túnel (ver bridge/tunnel.py).
+            # Serve para ninguém apontar o telemóvel antes de haver código para
+            # ler. Só faz sentido no modo web, que é o único com QR.
+            #
+            # O limite de tempo existe para o caso de o bridge não estar a
+            # correr de todo — alguém a abrir só o jogo com run-game.sh. Sem
+            # ele, esta pessoa ficava com "JÁ A SEGUIR" para sempre e a pensar
+            # que estava tudo avariado; passado esse tempo mostra-se o convite,
+            # que sem QR continua a dizer o que é preciso.
+            desde_o_arranque = global_state.frame_time - self.start_time
+            a_preparar = (
+                mode != "sip"
+                and desde_o_arranque < LOADING_MAX_SECONDS
+                and not invite_overlay.qr_ready()
+            )
+            if a_preparar:
+                invite_overlay.draw_loading(display, desde_o_arranque)
+            else:
+                # Convite nos quadrantes sem jogador — por cima de tudo, para
+                # nunca ficar escondido (os `slots` já foram lidos acima).
+                for i in range(4):
+                    if i not in occupied:
+                        invite_overlay.draw(display, self.positions[i], desde_o_arranque, queue_len, mode)
 
             self.render_frame(ctx, display, program, render_object, global_state.any_playing)
             post_shader = time.time()

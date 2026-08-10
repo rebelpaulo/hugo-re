@@ -17,6 +17,12 @@ módulo tem de aguentar-se sem esse ficheiro (ainda pode não ter sido
 gerado), tal como o resto do jogo se aguenta sem sprites do scoreboard:
 mostra o convite na mesma, sem QR.
 
+Enquanto o QR não existe há um ecrã de espera por cima de tudo (`draw_loading`)
+— o cartaz do jogo e "JÁ A SEGUIR". É o arranque do bridge a levantar o túnel,
+uns 30 segundos (ver bridge/tunnel.py). Sem isto via-se o convite completo mas
+sem código, o que parece avariado e põe gente a apontar o telemóvel a um
+quadrado que não está lá.
+
 Legibilidade a 3-5 metros manda sobre tudo: texto grande, contraste alto,
 zona neutra à volta do QR quando existe. A animação de pulsar é só um brilho
 subtil — em modo web à volta do QR, em modo sip à volta do próprio texto —
@@ -34,6 +40,14 @@ QUAD_W, QUAD_H = 320, 240
 
 QR_PATH = "resources/images/qr_lobby.png"
 QR_SIZE = 150  # pedido: pelo menos ~140px no quadrante 320x240
+
+# Logótipos do ecrã de espera. São os limpos, os mesmos que a webapp usa no
+# ecrã final. Não se usa aqui o `logo.png` antigo por duas razões concretas:
+# tem "Liga-te já e joga" impresso, que é o contrário do que este ecrã diz, e
+# traz um rodapé de créditos e número de versão que não têm nada que estar
+# num ecrã de evento.
+LOGO_PATH = "resources/images/hugo.png"
+BRAND_PATH = "resources/images/revenge.png"
 
 # De quanto em quanto tempo se vai ver se o ficheiro do QR mudou em disco.
 # Um `stat` por segundo não custa nada; ler a imagem por frame, em quatro
@@ -57,6 +71,11 @@ _queue_font = None
 _qr_image = None
 _qr_signature = None    # (mtime, tamanho) do ficheiro que está carregado
 _qr_next_check = 0.0
+_logo_image = None
+_brand_image = None
+_logo_loaded = False
+_loading_font = None
+_loading_sub_font = None
 
 
 def _load_fonts():
@@ -112,6 +131,81 @@ def _load_qr(now=None):
         _qr_image = None
         _qr_signature = None
     return _qr_image
+
+
+def qr_ready(now=None) -> bool:
+    """Já existe QR em disco? É o sinal de que o bridge acabou de arrancar."""
+    return _load_qr(now) is not None
+
+
+def _load_scaled(path, largura_max):
+    """Carrega e escala mantendo o rácio. Ausente não é erro — o ecrã de
+    espera fica só com o texto, que é o que importa."""
+    if not os.path.isfile(path):
+        return None
+    try:
+        img = pygame.image.load(path).convert_alpha()
+    except pygame.error:
+        return None
+    largura, altura = img.get_size()
+    if largura <= largura_max:
+        return img
+    escala = largura_max / largura
+    return pygame.transform.smoothscale(img, (largura_max, int(altura * escala)))
+
+
+def _load_loading_art():
+    """(logo do Hugo, marca do evento), carregados uma vez."""
+    global _logo_image, _brand_image, _logo_loaded
+    if _logo_loaded:
+        return _logo_image, _brand_image
+    _logo_loaded = True
+    _logo_image = _load_scaled(LOGO_PATH, 380)
+    _brand_image = _load_scaled(BRAND_PATH, 300)
+    return _logo_image, _brand_image
+
+
+def draw_loading(display, elapsed):
+    """Ecrã de espera, por cima de tudo, enquanto o QR não existe.
+
+    Serve um objectivo concreto: garantir que ninguém aponta o telemóvel antes
+    de haver código para ler. Enquanto isto está no ecrã não há QR nenhum
+    desenhado — nem sequer um por baixo.
+    """
+    global _loading_font, _loading_sub_font
+    if _loading_font is None:
+        _loading_font = pygame.freetype.SysFont("Impact,Arial", 34, bold=True)
+        _loading_sub_font = pygame.freetype.SysFont("Arial", 17, bold=True)
+
+    largura, altura = display.get_size()
+
+    # Fundo opaco: o ponto é tapar os quatro quadrantes, não deixá-los
+    # espreitar. Aqui, ao contrário do idle, isso é o que se quer.
+    display.fill((10, 8, 30))
+
+    logo, marca = _load_loading_art()
+    if logo is not None:
+        display.blit(logo, logo.get_rect(center=(largura // 2, 130)))
+
+    texto = "JÁ A SEGUIR"
+    rect = _loading_font.get_rect(texto)
+    y = 232
+    _loading_font.render_to(display, ((largura - rect.width) // 2, y), texto, _TITLE_COLOR)
+
+    # Três pontos que acendem à vez — diz "está a trabalhar", sem prometer uma
+    # percentagem que não sabemos.
+    aceso = int(elapsed * 2) % 3
+    raio, espaco = 5, 26
+    base_x = largura // 2 - espaco
+    for i in range(3):
+        cor = _SUB_COLOR if i == aceso else (110, 105, 90)
+        pygame.draw.circle(display, cor, (base_x + i * espaco, y + rect.height + 26), raio)
+
+    if marca is not None:
+        # Ancorada ao fundo com margem, não centrada num ponto fixo: a marca
+        # tem 161px de alto e centrá-la em altura-78 punha-a 2px fora do ecrã.
+        destino = marca.get_rect(midbottom=(largura // 2, altura - 14))
+        display.blit(marca, destino)
 
 
 def _plate(surface, rect, pad_x=10, pad_y=6):
