@@ -161,7 +161,7 @@ def _load_loading_art():
         return _logo_image, _brand_image
     _logo_loaded = True
     _logo_image = _load_scaled(LOGO_PATH, 380)
-    _brand_image = _load_scaled(BRAND_PATH, 300)
+    _brand_image = _load_scaled(BRAND_PATH, 150)
     return _logo_image, _brand_image
 
 
