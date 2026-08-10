@@ -137,7 +137,18 @@ class QuickTunnel:
         confirma-se que o PID ainda existe E que continua a ser o mesmo
         processo — mesma hora de arranque, mesmo comando. Só o comando não
         chegava: um PID reaproveitado por OUTRO cloudflared para a mesma porta
-        passava o teste e levava com o sinal. Sem identidade guardada (o `ps`
+        passava o teste e levava com o sinal.
+
+        ponytail: (PID, hora de arranque, comando) é o melhor que dá para ter
+        cá, não é prova. O `lstart` só tem o segundo, e entre ler a identidade
+        e mandar o sinal há uma janela onde o processo pode morrer e o PID ser
+        reaproveitado. Para o sinal ir parar ao sítio errado teria de nascer
+        outro cloudflared para esta mesma porta, com o mesmo PID, no mesmo
+        segundo, nessa janela. Se algum dia isso importar, o caminho não é
+        afinar esta função — é um túnel nomeado com nome fixo, que se
+        reaproveita em vez de se andar a caçar PIDs.
+
+        Sem identidade guardada (o `ps`
         falhou ao arrancar) não se mata nada: deixar um túnel a mais é menos
         mau do que fechar o processo de outra pessoa.
         """
