@@ -1,8 +1,8 @@
 # MANIFEST — dobragem PT dos minijogos (2026-08-09)
 
 Cada linha é um ficheiro do jogo que foi substituído (WAV instalado na BigFile).
-Origem: 17 gravações de estúdio (13 aproveitadas) mais 1 corte directo do
-episódio PT. As gravações não instaladas (4 de 17) estão descritas na secção
+Origem: 17 gravações de estúdio (13 aproveitadas, 1 sem uso) mais 1 corte directo do
+episódio PT. As gravações não instaladas (3 de 17) estão descritas na secção
 "Não instaladas" mais abaixo, com o motivo — os ficheiros do jogo
 correspondentes ficaram em espanhol.
 
@@ -42,17 +42,26 @@ volta e, nos 5 ficheiros de 94s, uma frase solta e recorrente no fim
 do corte em todos os casos. As duas restantes (`005-05`, `005-03`) já vinham
 justas, sem silêncio a cortar, e entraram inteiras.
 
-## Não instaladas (4 de 17) — ficheiros do jogo continuam em espanhol
+## Não instaladas (3 de 17) — e aí a fala do jogo fica em espanhol
 
-Nenhuma das quatro ficou de fora por causa do texto: duas são impossíveis de
-encaixar no tempo, uma é ambígua e uma foi substituída por um take melhor.
+Nenhuma ficou de fora por causa do texto: duas são impossíveis de encaixar no
+tempo e uma é ambígua.
 
 | gravação (~/Downloads) | fala a que se destinava | motivo |
 |---|---|---|
 | `juro que voltarei.mp4` | `002-09.wav` (Hugo, «Juro que volto já!») | **duração.** O texto («E salvou a sua família!») é adaptação aceite pelo Paulo, como as outras três, mas a fala dura 3.86s e o `002-09` é o slot mais curto de toda a caverna: o WAV espanhol tem 1.83s e o lip-sync (`Syncs/002-09.oos`, 167 bytes) dá ~1.4s. Precisaria de `atempo` 2.7x. Só com regravação curta. |
 | `¡Oi!» (grunhido de impacto).mp4` | `005-07.wav` (grunhido de impacto, 0.41s) | **duração.** Conteúdo confirmado («Bimba!»), mas a palavra com as duas sílabas dura ~0.85–0.97s mesmo no núcleo mais alto de energia — não cabe em 0.41s nem com `atempo` no limite de 1.08x (daria ~0.79–0.90s). Precisa de uma interjeição de uma sílaba, tipo o "Oi!" original. |
 | `grito sem palavras.mp4` | ambíguo — pode ser `005-06`, `005-09`, `002-10` ou `002-11` (os 4 gritos que não são `005-07`) | confirmado por whisper que é só grito sem palavras («AAAAAAAI»), mas o nome do ficheiro não identifica a qual dos 4 gritos se destina, e não há forma segura de decidir sem confirmação do Paulo. Não adivinhado. Reportado, não instalado — e, como nota lateral, os gritos ficam bem com o original em qualquer língua (ver guião). |
-| `Ai ai ai ai! Que dor.mp4` (primeira entrega) | `005-04.wav` (Hugo, «Ai ai ai ai! Que dor!») | **era cópia byte-a-byte (MD5 idêntico) de `«Olha os passarinhos!».mp4`** — o conteúdo real era "[olha os] passarinhos". **Resolvido:** o Paulo reenviou as duas separadas — `ai ai ai.mp4` para o `005-04` e um `«Olha os passarinhos!».mp4` novo para o `005-11`, cada uma com o seu take. Ambas instaladas; este ficheiro fica sem uso. |
+
+### Uma entrega sem uso, mas sem consequência
+
+`Ai ai ai ai! Que dor.mp4` (primeira entrega) era cópia byte-a-byte (MD5
+idêntico) de `«Olha os passarinhos!».mp4` — o conteúdo real era "[olha os]
+passarinhos", não "ai ai ai". Está resolvido: o Paulo reenviou as duas
+separadas, `ai ai ai.mp4` para o `005-04` e um `«Olha os passarinhos!».mp4`
+novo para o `005-11`, cada uma com o seu take, e ambas estão instaladas. Este
+ficheiro fica sem uso — mas nenhuma fala ficou em espanhol por causa dele, ao
+contrário das três da tabela acima.
 
 ## Falas do jogo que continuam em espanhol (das 21 no total)
 
@@ -88,6 +97,8 @@ concluiu que o `002-09` não tem salvação sem um take novo e curto.
 
 ## Ficheiros de trabalho (fora do WRITE SET)
 
-Áudio extraído, testes de whisper e clips intermédios ficaram em
-`/private/tmp/claude-501/-Users-mac-Claude-code/027ee575-9ffb-413b-b850-8994a6785b34/scratchpad/pt15/`
-— pasta temporária da sessão, não faz parte do repositório.
+Áudio extraído, testes de whisper e clips intermédios ficaram numa pasta
+temporária da sessão de trabalho, fora do repositório, e já não existem. Para
+refazer qualquer um dos cortes basta o WAV original (em
+`hugo-assets/minigame-orig-backup/`, com o mesmo caminho relativo) e a
+gravação de origem indicada na tabela.

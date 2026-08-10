@@ -57,8 +57,16 @@ elapsed = time.time() - start
 assert elapsed < 0.05, f"send_score(porta inválida) demorou {elapsed * 1000:.0f}ms"
 print(f"OK 2a: send_score(porta inválida) devolve-se em {elapsed * 1000:.2f}ms")
 
+# Porta livre de verdade, pedida ao sistema e logo largada. Estava aqui um
+# 9001 fixo, que é a porta de áudio do jogador 0 (ver bridge/config.yaml) — com
+# o bridge a correr, este teste metia-lhe um pacote inventado lá dentro.
+_sonda = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+_sonda.bind(("127.0.0.1", 0))
+porta_sem_ninguem = _sonda.getsockname()[1]
+_sonda.close()
+
 start = time.time()
-score_report.send_score(9001, 500)  # porta válida, quase de certeza sem bridge a ouvir aqui
+score_report.send_score(porta_sem_ninguem, 500)
 elapsed = time.time() - start
 assert elapsed < 0.05, f"send_score(sem bridge) demorou {elapsed * 1000:.0f}ms"
 print(f"OK 2b: send_score(sem bridge a ouvir) devolve-se em {elapsed * 1000:.2f}ms")

@@ -93,7 +93,10 @@
            precisamente antes de atender que se procura o sítio. -->
       <p class="screen-here" id="screen-here" hidden>
         <span>ESTÁS A JOGAR NO ECRÃ:</span>
-        <img id="screen-here-icon" src="" alt="">
+        <!-- Sem `src` até haver lugar atribuído: `src=""` resolve para o
+             próprio documento e o browser pede a página outra vez. É o JS
+             que o põe (ver markQuadrant em phone.js). -->
+        <img id="screen-here-icon" alt="">
       </p>
 
       <div class="keypad">

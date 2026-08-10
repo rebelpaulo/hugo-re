@@ -49,17 +49,22 @@ FS_PID=""
 parar_freeswitch() {
   echo ""
   echo "== a desligar o FreeSWITCH =="
-  if fs_vivo; then
-    "$FS_CLI_BIN" -x "shutdown" >/dev/null 2>&1 || true
-    # O shutdown "porta-se bem" mas demora — dá-lhe tempo antes de forçar.
-    for _ in $(seq 1 20); do
-      fs_vivo || break
-      sleep 0.5
-    done
+  # Só se mata o processo que ESTE script arrancou. Um `pkill -f freeswitch`
+  # apanharia também qualquer outro FreeSWITCH da máquina — e num Mac de
+  # produção pode haver um a servir outra coisa. Sem FS_PID (falha antes de
+  # arrancar) não há nada nosso para matar.
+  if [[ -z "$FS_PID" ]] || ! kill -0 "$FS_PID" 2>/dev/null; then
+    return 0
   fi
-  if fs_vivo; then
-    echo "   não desligou a tempo — a forçar (pkill -9)"
-    pkill -9 -f "$PADRAO_FS" 2>/dev/null || true
+  "$FS_CLI_BIN" -x "shutdown" >/dev/null 2>&1 || true
+  # O shutdown "porta-se bem" mas demora — dá-lhe tempo antes de forçar.
+  for _ in $(seq 1 20); do
+    kill -0 "$FS_PID" 2>/dev/null || break
+    sleep 0.5
+  done
+  if kill -0 "$FS_PID" 2>/dev/null; then
+    echo "   não desligou a tempo — a forçar (kill -9 $FS_PID)"
+    kill -9 "$FS_PID" 2>/dev/null || true
   fi
   return 0
 }

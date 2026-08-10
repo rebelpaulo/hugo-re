@@ -44,6 +44,19 @@ if [[ "$DOCTOR_STATUS" -ne 0 ]] && [[ -n "$FALHAS_ANTES_DO_ARRANQUE" ]]; then
   exit 1
 fi
 
+# O doctor pode falhar sem deixar nenhuma linha [FALHA] — se rebentar a meio,
+# por exemplo. Nesse caso não sabemos o que correu mal, e seguir em frente
+# calado é a pior das opções: o evento arranca sem verificação nenhuma e
+# ninguém dá por isso.
+if [[ "$DOCTOR_STATUS" -ne 0 ]]; then
+  echo ""
+  echo "[FALHA] A verificação terminou com erro ($DOCTOR_STATUS) mas não disse porquê."
+  echo "Isso normalmente quer dizer que o próprio doctor.sh rebentou."
+  echo "Corre-o à mão para ver o que se passa:"
+  echo "  scripts/macos/doctor.sh"
+  exit 1
+fi
+
 if [[ ! -x "$VENV_PY" ]]; then
   echo "[FALHA] Não encontrei a .venv em $REPO_DIR/.venv."
   echo "Corre scripts/macos/setup.sh e volta a tentar."
@@ -66,8 +79,14 @@ PY
 
 echo ""
 echo "============================================================"
-echo " URL DO LOBBY: http://$LOBBY_IP:8080/"
-echo " Aponta os telemóveis para este endereço depois do arranque."
+echo " O endereço do lobby aparece daqui a uns 30 segundos, quando"
+echo " o bridge acabar de levantar o túnel — procura a linha LOBBY."
+echo " É esse que o QR no ecrã grande vai ter, e funciona a partir"
+echo " de qualquer rede, não só desta."
+echo ""
+echo " Sem túnel (sem internet, ou cloudflared em falta) fica valer"
+echo " o endereço local, e aí só joga quem estiver nesta Wi-Fi:"
+echo "   http://$LOBBY_IP:8080/"
 echo "============================================================"
 echo ""
 echo "A arrancar o jogo e o bridge. Para parar, usa Ctrl-C nesta janela."
