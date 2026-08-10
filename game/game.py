@@ -108,6 +108,10 @@ class Game:
         # Última vez que houve QR em disco. Arranca no momento do arranque:
         # sem bridge nenhum, é daqui que conta o tecto do ecrã de espera.
         self.qr_last_seen = time.time()
+        # Só para registar a mudança de ecrã uma vez, não a cada frame. É o
+        # que dá ao teste de fumo forma de saber o que está no ecrã, e ao
+        # operador forma de perceber em que estado o ecrã grande ficou.
+        self.a_preparar_antes = None
         pygame.display.set_caption(Config.TITLE)
         pygame.font.init()
 
@@ -280,12 +284,26 @@ class Game:
             # o arranque do túnel pode levar 20s de espera de DNS mais 60s de
             # sondagens (ver bridge/tunnel.py), e desistir antes disso seria
             # desistir mesmo antes de o QR chegar.
-            if invite_overlay.qr_ready():
+            tem_qr = invite_overlay.qr_ready()
+            if tem_qr:
                 self.qr_last_seen = global_state.frame_time
             sem_qr_ha = global_state.frame_time - self.qr_last_seen
-            a_preparar = mode != "sip" and sem_qr_ha < LOADING_MAX_SECONDS
+            desde_o_arranque = global_state.frame_time - self.start_time
+            # `not tem_qr` é o termo que manda, e faltava aqui: com o QR
+            # presente o `qr_last_seen` é renovado a cada frame, portanto
+            # `sem_qr_ha` fica sempre a zero e a condição dava-se por
+            # verdadeira para sempre — o ecrã grande ficava preso em "JÁ A
+            # SEGUIR" a noite inteira, sem nunca mostrar o código. O tempo
+            # sozinho só serve para desistir; quem decide é haver ou não QR.
+            a_preparar = mode != "sip" and not tem_qr and sem_qr_ha < LOADING_MAX_SECONDS
+            if a_preparar != self.a_preparar_antes:
+                self.a_preparar_antes = a_preparar
+                print(
+                    "[ecrã] a mostrar: " + ("espera (sem QR)" if a_preparar else "convites"),
+                    flush=True,
+                )
             if a_preparar:
-                invite_overlay.draw_loading(display, global_state.frame_time - self.start_time)
+                invite_overlay.draw_loading(display, desde_o_arranque)
             else:
                 # Convite nos quadrantes sem jogador — por cima de tudo, para
                 # nunca ficar escondido (os `slots` já foram lidos acima).

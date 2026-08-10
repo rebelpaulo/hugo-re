@@ -33,6 +33,7 @@ import subprocess
 import logging
 import re
 import shutil
+from pathlib import Path
 from typing import Optional
 
 LOGGER = logging.getLogger("bridge.tunnel")
@@ -59,12 +60,16 @@ class QuickTunnel:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         dns_grace: float = DEFAULT_DNS_GRACE_SECONDS,
         probe_interval: float = DEFAULT_PROBE_INTERVAL_SECONDS,
+        pid_path: "Path | None" = None,
     ) -> None:
         self.port = port
         self.host = host
         self.timeout = timeout
         self.dns_grace = dns_grace
         self.probe_interval = probe_interval
+        # Onde fica escrito que o cloudflared em curso é nosso. Em
+        # bridge/data/, que já está fora do versionamento.
+        self.pid_path = pid_path or (Path(__file__).resolve().parent / "data" / "cloudflared.pid")
         self.url: Optional[str] = None
         self._proc: asyncio.subprocess.Process | None = None
         self._drain_task: asyncio.Task | None = None
@@ -73,8 +78,39 @@ class QuickTunnel:
         # ecrã que já não leva a lado nenhum, e nada nisto se nota sozinho.
         self._morreu = asyncio.Event()
 
+    def _comando_do_processo(self, pid: int) -> Optional[str]:
+        """Linha de comando de um PID, ou None se ele já não existir."""
+        try:
+            saida = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        linha = saida.stdout.strip()
+        return linha or None
+
+    def _registar_dono(self, pid: int) -> None:
+        """Deixa escrito que este cloudflared é nosso, e qual é."""
+        try:
+            self.pid_path.parent.mkdir(parents=True, exist_ok=True)
+            self.pid_path.write_text(f"{pid}\n{self._assinatura_comando()}\n", encoding="utf-8")
+        except OSError as erro:
+            LOGGER.debug("Não consegui registar o PID do cloudflared: %s", erro)
+
+    def _esquecer_dono(self) -> None:
+        try:
+            self.pid_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _assinatura_comando(self) -> str:
+        return f"cloudflared tunnel --url http://{self.host}:{self.port}"
+
     def _varrer_orfaos(self) -> int:
-        """Mata cloudflareds nossos que tenham sobrado de um arranque anterior.
+        """Mata um cloudflared NOSSO que tenha sobrado de um arranque anterior.
 
         Em macOS não há forma de pedir ao sistema que mate um filho quando o
         pai morre (o PR_SET_PDEATHSIG do Linux não existe cá). Se o bridge
@@ -82,35 +118,43 @@ class QuickTunnel:
         suposto. Ao longo de uma noite de reinícios isso acumula túneis a
         apontar para a mesma porta, todos menos um sem ninguém a saber deles.
 
-        O padrão é o nosso comando exacto, com a nossa porta: um cloudflared
-        que o operador tenha aberto para outra coisa não bate certo e fica
-        onde está.
+        A propriedade vem de um ficheiro que escrevemos ao arrancar, não de
+        adivinhar pela linha de comando: um `cloudflared tunnel --url` para a
+        mesma porta pode ser de outra coisa que o operador tenha aberto, e
+        matá-lo seria estragar-lhe o trabalho. Antes de mandar o sinal
+        confirma-se que o PID ainda existe E que o comando dele continua a ser
+        o nosso — um PID é reaproveitado pelo sistema mais depressa do que
+        parece.
         """
-        alvo = f"cloudflared tunnel --url http://{self.host}:{self.port}"
         try:
-            saida = subprocess.run(
-                ["ps", "ax", "-o", "pid=,command="], capture_output=True, text=True, timeout=5
-            ).stdout
-        except (OSError, subprocess.SubprocessError):
+            registo = self.pid_path.read_text(encoding="utf-8").split("\n")
+        except (OSError, ValueError):
             return 0
-        mortos = 0
-        for linha in saida.splitlines():
-            linha = linha.strip()
-            if not linha.startswith(tuple("0123456789")):
-                continue
-            pid_texto, _, comando = linha.partition(" ")
-            if not comando.strip().startswith(alvo):
-                continue
-            try:
-                os.kill(int(pid_texto), signal.SIGTERM)
-                mortos += 1
-            except (ValueError, ProcessLookupError, PermissionError):
-                continue
-        if mortos:
-            LOGGER.warning(
-                "Havia %d cloudflared de um arranque anterior nesta porta — fechados.", mortos
+        self._esquecer_dono()
+        try:
+            pid = int(registo[0].strip())
+        except (IndexError, ValueError):
+            return 0
+        assinatura = registo[1].strip() if len(registo) > 1 else ""
+        if assinatura != self._assinatura_comando():
+            return 0
+
+        comando = self._comando_do_processo(pid)
+        if comando is None:
+            return 0  # já morreu, nada a fazer
+        if not comando.startswith(assinatura):
+            LOGGER.debug(
+                "PID %d já não é o nosso cloudflared (é %r) — deixado em paz", pid, comando[:60]
             )
-        return mortos
+            return 0
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            return 0
+        LOGGER.warning(
+            "Ficou um cloudflared nosso (PID %d) de um arranque anterior — fechado.", pid
+        )
+        return 1
 
     async def start(self) -> Optional[str]:
         """Arranca o túnel e devolve o endereço público, ou None se não deu.
@@ -140,6 +184,8 @@ class QuickTunnel:
         except OSError as erro:
             LOGGER.warning("Não consegui arrancar o cloudflared (%s) — fica o endereço local", erro)
             return None
+
+        self._registar_dono(self._proc.pid)
 
         try:
             self.url = await asyncio.wait_for(self._read_url(), timeout=self.timeout)
@@ -295,6 +341,7 @@ class QuickTunnel:
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
+        self._esquecer_dono()
         self._morreu.set()
 
 

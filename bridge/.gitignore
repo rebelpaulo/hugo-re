@@ -2,3 +2,6 @@ __pycache__/
 # Bases SQLite do top10 (ver score_store.py) — dados de jogadores reais,
 # nunca versionados; bridge/badwords.txt (a lista em si) fica versionado.
 data/
+
+# PID do cloudflared em curso — runtime, nunca versionado.
+cloudflared.pid
