@@ -30,6 +30,8 @@ DOCTOR_OUTPUT="$("$SCRIPT_DIR/doctor.sh" "$ASSETS" 2>&1)" || DOCTOR_STATUS=$?
 DOCTOR_STATUS="${DOCTOR_STATUS:-0}"
 printf '%s\n' "$DOCTOR_OUTPUT"
 
+TODAS_AS_FALHAS="$(printf '%s\n' "$DOCTOR_OUTPUT" | grep -c '^\[FALHA\]' || true)"
+
 FALHAS_ANTES_DO_ARRANQUE="$(
   printf '%s\n' "$DOCTOR_OUTPUT" |
     grep '^\[FALHA\]' |
@@ -48,7 +50,13 @@ fi
 # por exemplo. Nesse caso não sabemos o que correu mal, e seguir em frente
 # calado é a pior das opções: o evento arranca sem verificação nenhuma e
 # ninguém dá por isso.
-if [[ "$DOCTOR_STATUS" -ne 0 ]]; then
+#
+# Tem de ser NENHUMA falha, não "nenhuma que interesse": o doctor sai a 1 por
+# causa das duas falhas esperadas (bridge e jogo ainda não estão vivos), e a
+# primeira versão disto lia esse 1 como se o doctor tivesse rebentado. Resultado:
+# o Hugo.command recusava-se a arrancar sempre, num arranque limpo, a dizer que
+# a verificação "não disse porquê" logo abaixo de a verificação ter dito porquê.
+if [[ "$DOCTOR_STATUS" -ne 0 ]] && [[ "$TODAS_AS_FALHAS" -eq 0 ]]; then
   echo ""
   echo "[FALHA] A verificação terminou com erro ($DOCTOR_STATUS) mas não disse porquê."
   echo "Isso normalmente quer dizer que o próprio doctor.sh rebentou."
