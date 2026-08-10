@@ -49,7 +49,10 @@ echo
 
 # -- 2. imports ---------------------------------------------------------------
 echo "-- imports --"
-MODULES=(pygame moderngl pyvidplayer2 sounddevice soundfile numpy scipy yaml)
+# aiohttp e qrcode são do bridge (bridge/main.py, bridge/qr.py). Faltavam aqui
+# e no requirements-lock.txt, e por isso uma .venv nova passava na verificação
+# e só rebentava quando alguém tentasse arrancar o bridge.
+MODULES=(pygame moderngl pyvidplayer2 sounddevice soundfile numpy scipy yaml aiohttp qrcode)
 if [ -x "$VENV_PY" ]; then
   for mod in "${MODULES[@]}"; do
     if "$VENV_PY" -c "import $mod" >"$TMP_DIR/$mod.out" 2>"$TMP_DIR/$mod.err"; then

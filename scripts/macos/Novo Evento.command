@@ -54,8 +54,18 @@ con = sqlite3.connect(sys.argv[1])
 print(con.execute("SELECT count(*) FROM scores").fetchone()[0])
 PY
 )"
-    mv "$db" "$ARQUIVO/"
-    echo "  arquivada $(basename "$db") — $n pontuações"
+    # As bases têm o nome ao minuto (scores-AAAAMMDD-HHMM.db). Criar, arquivar
+    # e criar outra dentro do mesmo minuto — que é exactamente o que acontece a
+    # testar isto — daria dois ficheiros com o mesmo nome, e o segundo comia o
+    # primeiro em silêncio. Depois de dizermos "nada foi apagado", seria mentira.
+    destino="$ARQUIVO/$(basename "$db")"
+    sufixo=2
+    while [[ -e "$destino" ]]; do
+      destino="$ARQUIVO/$(basename "$db" .db)-$sufixo.db"
+      sufixo=$((sufixo + 1))
+    done
+    mv "$db" "$destino"
+    echo "  arquivada $(basename "$db") — $n pontuações -> $(basename "$destino")"
   done
   echo ""
   echo "Guardadas em: bridge/data/arquivo/  (nada foi apagado)"

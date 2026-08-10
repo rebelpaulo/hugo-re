@@ -30,10 +30,11 @@ import invite_overlay
 # suficiente para dar tempo de apontar e carregar.
 POINTER_LINGER = 3.0
 
-# Tecto do ecrã de espera do arranque. O túnel leva uns 30s; isto dá-lhe folga
-# e, passado o tempo, desiste em vez de deixar o ecrã preso — o caso de alguém
-# abrir só o jogo, sem bridge nenhum a correr.
-LOADING_MAX_SECONDS = 90.0
+# Quanto tempo o ecrã de espera aguenta sem QR antes de desistir e mostrar o
+# convite. Tem de cobrir o pior arranque do túnel — 20s de espera de DNS mais
+# 60s de sondagens, mais o tempo de o cloudflared falar (ver bridge/tunnel.py)
+# — com folga, senão desistiríamos mesmo antes de o QR chegar.
+LOADING_MAX_SECONDS = 150.0
 
 class Game:
     positions = [
@@ -104,6 +105,9 @@ class Game:
         # Instante até ao qual o cursor e o botão de ecrã inteiro ficam à
         # vista; renovado a cada movimento do rato (ver o ciclo de eventos).
         self.pointer_until = 0.0
+        # Última vez que houve QR em disco. Arranca no momento do arranque:
+        # sem bridge nenhum, é daqui que conta o tecto do ecrã de espera.
+        self.qr_last_seen = time.time()
         pygame.display.set_caption(Config.TITLE)
         pygame.font.init()
 
@@ -258,24 +262,30 @@ class Game:
             elif pygame.mouse.get_visible():
                 pygame.mouse.set_visible(False)
 
-            # Ecrã de espera enquanto o bridge não tiver escrito o QR — são uns
-            # 30 segundos, o tempo de levantar o túnel (ver bridge/tunnel.py).
-            # Serve para ninguém apontar o telemóvel antes de haver código para
-            # ler. Só faz sentido no modo web, que é o único com QR.
+            # Ecrã de espera enquanto não houver QR em disco. Serve para
+            # ninguém apontar o telemóvel antes de haver código para ler. Só
+            # faz sentido no modo web, que é o único com QR.
             #
-            # O limite de tempo existe para o caso de o bridge não estar a
-            # correr de todo — alguém a abrir só o jogo com run-game.sh. Sem
-            # ele, esta pessoa ficava com "JÁ A SEGUIR" para sempre e a pensar
-            # que estava tudo avariado; passado esse tempo mostra-se o convite,
-            # que sem QR continua a dizer o que é preciso.
-            desde_o_arranque = global_state.frame_time - self.start_time
-            a_preparar = (
-                mode != "sip"
-                and desde_o_arranque < LOADING_MAX_SECONDS
-                and not invite_overlay.qr_ready()
-            )
+            # O relógio conta desde a última vez que HOUVE QR, não desde o
+            # arranque do jogo. A diferença aparece quando o bridge reinicia a
+            # meio da noite: ele apaga o QR e leva outro minuto a levantar
+            # túnel novo, e com o relógio preso ao arranque o ecrã saltava logo
+            # para o convite sem código — precisamente o que este ecrã existe
+            # para evitar. Assim, cada desaparecimento do QR ganha a sua
+            # própria janela de espera.
+            #
+            # O tecto existe para o caso de o bridge não estar a correr de todo
+            # — alguém a abrir só o jogo com run-game.sh. Sem ele ficava "JÁ A
+            # SEGUIR" para sempre, com ar de avariado. É folgado de propósito:
+            # o arranque do túnel pode levar 20s de espera de DNS mais 60s de
+            # sondagens (ver bridge/tunnel.py), e desistir antes disso seria
+            # desistir mesmo antes de o QR chegar.
+            if invite_overlay.qr_ready():
+                self.qr_last_seen = global_state.frame_time
+            sem_qr_ha = global_state.frame_time - self.qr_last_seen
+            a_preparar = mode != "sip" and sem_qr_ha < LOADING_MAX_SECONDS
             if a_preparar:
-                invite_overlay.draw_loading(display, desde_o_arranque)
+                invite_overlay.draw_loading(display, global_state.frame_time - self.start_time)
             else:
                 # Convite nos quadrantes sem jogador — por cima de tudo, para
                 # nunca ficar escondido (os `slots` já foram lidos acima).

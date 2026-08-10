@@ -27,6 +27,9 @@ local funciona sempre, com ou sem túnel.
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
+import subprocess
 import logging
 import re
 import shutil
@@ -65,6 +68,49 @@ class QuickTunnel:
         self.url: Optional[str] = None
         self._proc: asyncio.subprocess.Process | None = None
         self._drain_task: asyncio.Task | None = None
+        # Fica marcado quando o cloudflared termina por si. Serve para quem
+        # nos usa poder reagir — um túnel morto a meio do evento é um QR no
+        # ecrã que já não leva a lado nenhum, e nada nisto se nota sozinho.
+        self._morreu = asyncio.Event()
+
+    def _varrer_orfaos(self) -> int:
+        """Mata cloudflareds nossos que tenham sobrado de um arranque anterior.
+
+        Em macOS não há forma de pedir ao sistema que mate um filho quando o
+        pai morre (o PR_SET_PDEATHSIG do Linux não existe cá). Se o bridge
+        levar SIGKILL, ou rebentar, o cloudflared fica vivo — medido, não
+        suposto. Ao longo de uma noite de reinícios isso acumula túneis a
+        apontar para a mesma porta, todos menos um sem ninguém a saber deles.
+
+        O padrão é o nosso comando exacto, com a nossa porta: um cloudflared
+        que o operador tenha aberto para outra coisa não bate certo e fica
+        onde está.
+        """
+        alvo = f"cloudflared tunnel --url http://{self.host}:{self.port}"
+        try:
+            saida = subprocess.run(
+                ["ps", "ax", "-o", "pid=,command="], capture_output=True, text=True, timeout=5
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            return 0
+        mortos = 0
+        for linha in saida.splitlines():
+            linha = linha.strip()
+            if not linha.startswith(tuple("0123456789")):
+                continue
+            pid_texto, _, comando = linha.partition(" ")
+            if not comando.strip().startswith(alvo):
+                continue
+            try:
+                os.kill(int(pid_texto), signal.SIGTERM)
+                mortos += 1
+            except (ValueError, ProcessLookupError, PermissionError):
+                continue
+        if mortos:
+            LOGGER.warning(
+                "Havia %d cloudflared de um arranque anterior nesta porta — fechados.", mortos
+            )
+        return mortos
 
     async def start(self) -> Optional[str]:
         """Arranca o túnel e devolve o endereço público, ou None se não deu.
@@ -78,6 +124,8 @@ class QuickTunnel:
                 "Instala com: brew install cloudflared"
             )
             return None
+
+        self._varrer_orfaos()
 
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -157,9 +205,23 @@ class QuickTunnel:
                 tentativa += 1
                 try:
                     async with session.get(f"{self.url}/") as resposta:
-                        # Qualquer resposta HTTP serve: o que se está a provar
-                        # é que o caminho de fora até aqui está aberto, não
-                        # que a rota "/" devolve 200.
+                        # Um 5xx aqui é a Cloudflare a dizer que ela própria
+                        # não chega à origem — 502 e 530 são o que ela devolve
+                        # enquanto o túnel ainda não está montado de ponta a
+                        # ponta. Dar isso por bom seria pôr no ecrã um QR que
+                        # leva a uma página de erro, exactamente o que esta
+                        # espera existe para evitar. Abaixo de 500 serve: quem
+                        # responde é a nossa app, e o que se está a provar é
+                        # que o caminho de fora até cá está aberto, não que a
+                        # rota "/" devolve 200.
+                        if resposta.status >= 500:
+                            LOGGER.info(
+                                "túnel devolveu %s à tentativa %d — ainda não está montado",
+                                resposta.status,
+                                tentativa,
+                            )
+                            await asyncio.sleep(self.probe_interval)
+                            continue
                         LOGGER.debug(
                             "túnel respondeu %s à tentativa %d", resposta.status, tentativa
                         )
@@ -182,7 +244,10 @@ class QuickTunnel:
                 return found.group(0).decode()
 
     async def _drain(self) -> None:
-        """Lê e deita fora o resto da saída, para o pipe nunca encher."""
+        """Lê e deita fora o resto da saída, para o pipe nunca encher.
+
+        O fim da saída é também como se sabe que o cloudflared morreu — daí
+        marcar `_morreu` à saída, em qualquer dos caminhos."""
         assert self._proc is not None and self._proc.stdout is not None
         try:
             while True:
@@ -194,6 +259,25 @@ class QuickTunnel:
             raise
         except Exception:  # nunca derrubar o bridge por causa do log do túnel
             LOGGER.exception("Falha a ler a saída do cloudflared")
+        finally:
+            self._morreu.set()
+
+    async def wait_until_dead(self) -> None:
+        """Devolve-se quando o cloudflared terminar por si.
+
+        Quem chama isto é o vigia em `main.py`: sem ele, um túnel que caia às
+        23h deixa o QR do ecrã grande a apontar para o vazio e mais ninguém
+        entra — e o supervisor não dá por nada, porque o bridge continua vivo.
+        """
+        await self._morreu.wait()
+
+    async def restart(self) -> Optional[str]:
+        """Fecha o que resta e levanta um túnel novo. Endereço novo, portanto
+        quem chama tem de voltar a gerar o QR."""
+        await self.stop()
+        self._morreu = asyncio.Event()
+        self.url = None
+        return await self.start()
 
     async def stop(self) -> None:
         if self._drain_task is not None:
@@ -203,6 +287,7 @@ class QuickTunnel:
         proc = self._proc
         self._proc = None
         if proc is None or proc.returncode is not None:
+            self._morreu.set()
             return
         proc.terminate()
         try:
@@ -210,6 +295,7 @@ class QuickTunnel:
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
+        self._morreu.set()
 
 
 async def _demo() -> int:

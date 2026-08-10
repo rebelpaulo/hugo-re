@@ -130,6 +130,17 @@ async def run(config_path: Path) -> None:
 
     ip = lan_ip()
     local_url = f"http://{ip}:{port}/"
+
+    # Os handlers de sinal vão ANTES de arrancar o túnel, não depois. O
+    # `tunnel.start()` pode demorar mais de um minuto entre a espera do DNS e
+    # as sondagens; com os handlers instalados só a seguir, um Ctrl-C nesse
+    # intervalo matava o bridge pela acção por omissão do sinal e deixava o
+    # cloudflared vivo, órfão. Repetir arranques ia acumulando túneis.
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop_event.set)
+
     tunnel: QuickTunnel | None = None
     public_url: str | None = None
     if tunnel_config.get("enabled", False):
@@ -138,7 +149,25 @@ async def run(config_path: Path) -> None:
             timeout=float(tunnel_config.get("timeout_seconds", 60)),
             dns_grace=float(tunnel_config.get("dns_grace_seconds", 20)),
         )
-        public_url = await tunnel.start()
+        # O arranque do túnel pode levar mais de um minuto (espera de DNS mais
+        # sondagens). Se chegar um sinal a meio, não basta o handler marcar o
+        # `stop_event` — é preciso interromper esta espera, senão o bridge fica
+        # cá dentro até ela acabar e o cloudflared pode sobreviver-lhe.
+        tarefa_tunel = asyncio.create_task(tunnel.start())
+        tarefa_parar = asyncio.create_task(stop_event.wait())
+        feitas, _ = await asyncio.wait(
+            {tarefa_tunel, tarefa_parar}, return_when=asyncio.FIRST_COMPLETED
+        )
+        if tarefa_parar in feitas:
+            LOGGER.info("Sinal recebido durante o arranque do túnel — a desistir dele.")
+            tarefa_tunel.cancel()
+            await asyncio.gather(tarefa_tunel, return_exceptions=True)
+            await tunnel.stop()
+            await runner.cleanup()
+            LOGGER.info("Bridge desligado.")
+            return
+        tarefa_parar.cancel()
+        public_url = tarefa_tunel.result()
         if public_url is None:
             tunnel = None
         else:
@@ -195,25 +224,68 @@ async def run(config_path: Path) -> None:
         )
         sip_task = asyncio.create_task(sip_adapter.run())
 
-    stop_event = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop_event.set)
-
     tick_task = asyncio.create_task(periodic_tick(manager, route, stop_event))
-
-    await stop_event.wait()
-    LOGGER.info("Sinal recebido — a desligar o bridge...")
-    tick_task.cancel()
-    await asyncio.gather(tick_task, return_exceptions=True)
-    if sip_adapter is not None and sip_task is not None:
-        await sip_adapter.stop()
-        await asyncio.gather(sip_task, return_exceptions=True)
-    await route(manager.end_match())
+    tunnel_task: asyncio.Task | None = None
     if tunnel is not None:
-        await tunnel.stop()
-    await runner.cleanup()
-    LOGGER.info("Bridge desligado.")
+        tunnel_task = asyncio.create_task(
+            vigiar_tunel(tunnel, local_url, stop_event)
+        )
+
+    try:
+        await stop_event.wait()
+        LOGGER.info("Sinal recebido — a desligar o bridge...")
+    finally:
+        # `finally` e não a seguir ao `await`: se algo aqui rebentar, ou se
+        # a tarefa for cancelada, o cloudflared tem de morrer na mesma. Já
+        # deixámos túneis órfãos por não haver isto.
+        tick_task.cancel()
+        await asyncio.gather(tick_task, return_exceptions=True)
+        if tunnel_task is not None:
+            tunnel_task.cancel()
+            await asyncio.gather(tunnel_task, return_exceptions=True)
+        if sip_adapter is not None and sip_task is not None:
+            await sip_adapter.stop()
+            await asyncio.gather(sip_task, return_exceptions=True)
+        await route(manager.end_match())
+        if tunnel is not None:
+            await tunnel.stop()
+        await runner.cleanup()
+        LOGGER.info("Bridge desligado.")
+
+
+async def vigiar_tunel(tunnel: QuickTunnel, local_url: str, stop_event: asyncio.Event) -> None:
+    """Levanta outro túnel se o cloudflared cair, e refaz o QR.
+
+    Sem isto, um túnel que morra às 23h deixa o ecrã grande com um QR que já
+    não leva a lado nenhum e mais ninguém entra — e nada o denuncia, porque o
+    bridge continua vivo e o supervisor só vigia processos.
+
+    O endereço novo é outro, e é por isso que o jogo relê o ficheiro do QR
+    quando ele muda (ver `game/invite_overlay.py`): o ecrã grande passa a
+    mostrar o código certo sozinho, sem reiniciar nada. Quem já estava a jogar
+    perde a ligação — o endereço antigo morreu com o túnel — mas quem chegar a
+    seguir entra.
+    """
+    while not stop_event.is_set():
+        await tunnel.wait_until_dead()
+        if stop_event.is_set():
+            return
+        LOGGER.error("O cloudflared caiu — o QR no ecrã já não serve. A levantar outro túnel.")
+        # Fora o QR morto primeiro: durante a recuperação é melhor o ecrã não
+        # ter código nenhum do que ter um que dá erro.
+        QR_OUTPUT.unlink(missing_ok=True)
+        novo = await tunnel.restart()
+        if novo is None:
+            LOGGER.error(
+                "Não consegui levantar outro túnel. Fica o endereço local (%s) — "
+                "só entra quem estiver na mesma Wi-Fi.",
+                local_url,
+            )
+            generate_qr(local_url, QR_OUTPUT)
+            return
+        novo = novo.rstrip("/") + "/"
+        generate_qr(novo, QR_OUTPUT)
+        LOGGER.info("Túnel de pé outra vez: %s (QR do ecrã já actualizado)", novo)
 
 
 def main() -> None:
