@@ -1,0 +1,19 @@
+# Filtro básico de nomes para o top10 do dia (ver score_store.py).
+#
+# Uma palavra por linha. Maiúsculas ou minúsculas — a comparação é sempre
+# feita em maiúsculas. Linhas vazias e a começar por "#" são ignoradas.
+#
+# O nome já chega aqui limpo (só A-Z, 0-9 e espaço, máx. 8 caracteres — ver
+# `clean_name` em score_store.py); a verificação é por substring dentro
+# desse nome limpo, não por palavra inteira, para apanhar variantes como
+# "PUTA1" ou "XPUTAX". Editável pela produção sem tocar em código nenhum —
+# basta acrescentar ou tirar uma linha e reiniciar o bridge.
+PUTA
+PUTO
+MERDA
+CARALHO
+CABRAO
+FDP
+CACETE
+BOSTA
+ANAL

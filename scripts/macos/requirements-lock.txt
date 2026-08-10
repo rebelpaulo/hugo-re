@@ -1,9 +1,27 @@
 # Versões validadas para o espetáculo em macOS arm64 com Python 3.13.
+#
+# NOTA sobre o opencv-python ausente (Problema 1 do endurecimento pré-evento):
+# o pyvidplayer2 declara opencv-python como dependência de instalação, mas só o
+# importa em runtime se `importlib.util.find_spec("cv2")` o encontrar — e nesse
+# caso prefere-o ao FFMPEGReader para ler vídeo local. O wheel do opencv-python
+# (e também o opencv-python-headless, testado e confirmado com o mesmo problema)
+# traz o seu próprio libSDL2-2.0.0.dylib, que colide em runtime com o do pygame:
+# "Class SDLApplication is implemented in both ... This may cause spurious
+# casting failures and mysterious crashes." — o pior cenário possível a meio
+# do evento.
+#
+# Não instalar opencv aqui é deliberado: sem cv2, o pyvidplayer2 cai sozinho
+# para o FFMPEGReader (ffmpeg já é dependência do projeto), sem perder
+# funcionalidade — confirmado a decodificar os clips PT reais via
+# TvShowResources.init(), os 4 quadrantes, sem o aviso objc duplicado.
+# setup.sh instala este ficheiro com `--no-deps`, precisamente para que o
+# resolvedor do pip não volte a puxar o opencv-python como dependência
+# transitiva do pyvidplayer2. Nunca reintroduzir opencv-python(-headless)
+# neste .venv sem repetir essa validação.
 cffi==2.1.1
 glcontext==3.0.0
 moderngl==5.12.0
 numpy==2.5.1
-opencv-python==5.0.0.93
 pycparser==3.0
 pygame==2.6.1
 PyYAML==6.0.3
@@ -12,3 +30,23 @@ scipy==1.18.0
 sounddevice==0.5.5
 soundfile==0.14.0
 typing_extensions==4.16.0
+
+# --- bridge (webapp + QR) -------------------------------------------------
+# O bridge importa aiohttp (bridge/main.py) e qrcode (bridge/qr.py). Faltavam
+# aqui, e como o setup.sh instala este ficheiro com `--no-deps`, uma .venv
+# criada de raiz ficava sem eles: o bridge rebentava no import, antes sequer
+# de tentar arrancar. Só se via numa máquina nova — nesta já estavam
+# instalados à mão de quando foram precisos. Achado pelo CodeRabbit no PR #2.
+#
+# Fecho completo das transitivas, tirado do ambiente validado. Se mexeres numa
+# versão, recalcula o fecho todo — com `--no-deps` o pip não o faz por ti.
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
+aiosignal==1.4.0
+attrs==26.1.0
+frozenlist==1.8.0
+idna==3.18
+multidict==6.7.1
+propcache==0.5.2
+qrcode==8.2
+yarl==1.24.5

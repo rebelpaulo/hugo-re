@@ -36,3 +36,7 @@ game-lite/hugo_lite
 
 # Rust
 audio-server/target/
+
+# Gerado pelo bridge a cada arranque, com o endereço do túnel dessa sessão.
+# Versioná-lo só serve para um clone novo trazer um endereço morto.
+game/resources/images/qr_lobby.png

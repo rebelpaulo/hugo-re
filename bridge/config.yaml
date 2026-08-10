@@ -1,0 +1,129 @@
+# Como é que as pessoas entram no jogo. Decisão da produção, ligada ANTES do
+# evento consoante o que está montado na sala — nunca escolha do público, e
+# os dois usos nunca se cruzam: ou o evento é todo com a webapp, ou é todo
+# com telefones físicos. Mudar aqui e reiniciar o bridge (bridge/main.py) é
+# tudo o que é preciso; não é preciso mexer em código.
+#
+#   web — só webapp. Quem lê o QR cai direto no teclado ou na fila, sem
+#         nenhum ecrã pelo meio.
+#   sip — só telefones físicos da sala. Não há QR nenhum no ecrã grande neste
+#         modo, portanto ninguém devia sequer chegar à webapp.
+#
+# Valor ausente ou inválido (incluindo o antigo "both", que deixou de
+# existir) cai em "web" e fica registado no log — nunca derruba o arranque.
+input_mode: web   # web | sip
+
+# Endereço UDP onde o jogo escuta. Manter em loopback na activação local.
+game:
+  host: 127.0.0.1
+  port: 9100
+
+# Servidor HTTP + WebSocket que serve a webapp. 0.0.0.0 é deliberado: os
+# telemóveis dos convidados têm de o alcançar pela Wi-Fi do evento. O emissor
+# UDP para o jogo (acima) continua sempre em 127.0.0.1, nunca aqui.
+web:
+  host: 0.0.0.0
+  port: 8080
+
+# Túnel para a internet (ver bridge/tunnel.py). Sem isto, quem lê o QR tem de
+# estar na mesma Wi-Fi que o Mac — o que num evento não acontece, porque as
+# pessoas estão no 4G delas.
+#
+# É um "quick tunnel" da Cloudflare: não pede conta, não pede domínio, não
+# custa nada e não mete página de aviso entre o QR e o jogo. Precisa do
+# cloudflared instalado (`brew install cloudflared`); sem ele, o arranque
+# continua e o QR aponta para a rede local, como antes.
+#
+# O endereço muda a cada arranque. No ecrã isso é indiferente (o QR é gerado
+# de novo em cada arranque), mas se o bridge reiniciar a meio do evento, quem
+# já estava ligado tem de voltar a ler o QR. Quem quiser endereço fixo precisa
+# de um túnel nomeado, e esse precisa de um domínio na conta Cloudflare.
+tunnel:
+  enabled: true
+  # Quanto tempo se espera, no total, que o endereço fique acessível de fora.
+  timeout_seconds: 60
+  # Silêncio antes da primeira pergunta pelo endereço novo. NÃO baixar sem ler
+  # o comentário em tunnel.py: perguntar cedo de mais fixa um "não existe" no
+  # resolvedor e o arranque fica preso a essa resposta. Medido nesta máquina —
+  # a insistir desde o segundo zero, 20s não chegaram; a esperar calado, o
+  # nome resolveu à primeira.
+  dns_grace_seconds: 20
+
+bridge:
+  # Número de quadrantes/jogadores simultâneos do jogo.
+  slots: 4
+
+  # Um jogador sem actividade perde o slot ao fim deste tempo.
+  inactivity_timeout_seconds: 120
+
+  # Prazo dado a uma pessoa da fila web para aceitar a sua vez.
+  offer_timeout_seconds: 15
+
+  # Eventos iguais do mesmo jogador dentro desta janela são duplicados.
+  dedup_window_ms: 60
+
+  # Regra fechada: um telefone nunca expulsa quem já está a jogar.
+  sip_preempt: false
+
+# Só lido quando input_mode: sip (acima). Onde está o Event Socket do
+# FreeSWITCH — ver bridge/freeswitch/README.md para a configuração do lado
+# do FreeSWITCH e scripts/macos/run-sip.sh para o arrancar.
+sip:
+  esl_host: 127.0.0.1
+  esl_port: 8021
+  # Password de origem do event_socket.conf.xml — não a mudámos do vanilla
+  # (não é segredo real, é a mesma em qualquer instalação por omissão, e o
+  # ESL só está à escuta em 127.0.0.1). Se um dia isso importar, muda aqui
+  # e num override novo de autoload_configs/event_socket.conf.xml juntos.
+  esl_password: ClueCon
+  # Tem de bater certo com o contexto do dialplan/perfil SIP — ver
+  # bridge/freeswitch/overrides/dialplan/hugo-lan.xml.
+  context: hugo-lan
+
+# Áudio do jogo: cada jogador ouve no seu telemóvel (via WebSocket) em vez das
+# colunas do computador. Ver bridge/audio_router.py e bridge/README.md.
+audio:
+  # "devices": som encaminhado para o telemóvel do jogador — o normal.
+  # "pa": interruptor de recurso — comportamento antigo, som pelas colunas do
+  # computador via audio-server/audio_server.py. Usar só se os altifalantes
+  # dos telemóveis falharem no dia do evento.
+  mode: devices
+
+  # Portas UDP onde o jogo já fala (game/game.py) — índice = jogador (0..3).
+  ports: [9001, 9002, 9003, 9004]
+
+  # Pasta de assets do jogo (BigFile), onde os .wav originais vivem.
+  assets_path: /Users/mac/Claude code/hugo-assets/gold/BigFile
+
+  # Segunda origem: vozes e loops dos vídeos do programa de TV. O bridge
+  # procura primeiro em assets_path e depois aqui, como o audio-server.
+  resources_path: /Users/mac/Claude code/hugo-re/game/resources
+
+  # Cache dos ficheiros já convertidos para 16 bits/44.1kHz/mono — persiste
+  # entre arranques, a conversão só acontece uma vez por ficheiro.
+  cache_dir: bridge/audio_cache
+
+  # Só usado em modo "pa": onde está o audio-server local e as portas que ele
+  # escuta (diferentes das do jogo, para não colidirem com este router).
+  pa_host: 127.0.0.1
+  pa_ports: [9101, 9102, 9103, 9104]
+  pa_timeout_seconds: 0.4
+
+# Pontuação do dia: liga a pontuação que o jogo manda por UDP no fim da
+# partida (game/score_report.py) ao nome que o jogador escreve depois do
+# ecrã de "finished" (ver bridge/webapp/ e bridge/score_store.py). O top10
+# é sempre o da SESSÃO activa (janela de 24h a contar do arranque, não a
+# data do calendário — o evento atravessa a meia-noite; ver score_store.py
+# para a decisão completa), nunca apagado por um restart do bridge.
+score:
+  host: 127.0.0.1
+  # Porta nova, só para isto. 9102 foi a sugestão inicial do ticket, mas
+  # colide com audio.pa_ports acima (modo "pa") — 9110 para nunca arriscar
+  # a mesma porta que o áudio em palco. Combina com HUGO_SCORE_PORT do lado
+  # do jogo (game/score_report.py), que não lê este ficheiro.
+  port: 9110
+  # Onde ficam as bases SQLite (uma por sessão de 24h) — gitignored.
+  data_dir: bridge/data
+  # Lista de palavras a filtrar do nome, uma por linha — editável pela
+  # produção sem tocar em código.
+  badwords_path: bridge/badwords.txt

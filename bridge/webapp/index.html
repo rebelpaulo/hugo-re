@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<title>Hugo — Telefone</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hugo Telefone">
+<meta name="theme-color" content="#3a3a34">
+<meta name="format-detection" content="telephone=no">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="phone.css">
+</head>
+<body>
+
+<!-- Splash — primeiro ecrã, antes de qualquer ligação. Espera pelo primeiro
+     toque (ver phone.js): o AudioContext só desbloqueia dentro de um gesto
+     real do utilizador, por isso já não há saída automática por tempo. A
+     ligação (WebSocket) continua a fazer-se por trás, sem depender disto. -->
+<div class="splash" id="splash" aria-hidden="true">
+  <img class="splash-logo" src="img/logo.png" alt="">
+  <p class="splash-tap-line lcd-blink">TOCA PARA LIGAR</p>
+</div>
+
+<div class="stage">
+
+  <!-- 1. Mensagem para quem chega à webapp num evento input_mode=sip — não
+       é o percurso normal (nesse modo não há QR nenhum no ecrã grande, logo
+       ninguém devia cair aqui), mas alguém pode ter guardado o URL de um
+       evento anterior. Nunca fica em branco. -->
+  <section id="screen-sip" class="screen">
+    <div class="sip-box">
+      <p class="sip-text">Hoje joga-se pelos telefones da sala.</p>
+    </div>
+  </section>
+
+  <!-- 2. A ligar — primeiro ecrã que quem lê o QR vê. Sem seletor: assim
+       que o servidor confirma o modo web, entra-se direto na fila ou no
+       teclado. -->
+  <section id="screen-connecting" class="screen active">
+    <div class="lcd lcd-standalone">
+      <div class="lcd-line lcd-blink">A LIGAR…</div>
+    </div>
+  </section>
+
+  <!-- 3. Fila -->
+  <section id="screen-queue" class="screen">
+    <div class="lcd lcd-standalone">
+      <div class="lcd-line">ESTÁS NA FILA</div>
+      <div class="lcd-line lcd-big"><span id="queue-position">–</span>º LUGAR</div>
+      <div class="lcd-line" id="queue-ahead-line">–</div>
+    </div>
+    <p class="queue-note">Não feches o ecrã — avisamos-te aqui assim que chegar a tua vez.</p>
+    <div class="queue-deco" aria-hidden="true"></div>
+    <div class="queue-dots"><span></span><span></span><span></span></div>
+    <button class="btn-back" id="btn-queue-leave" type="button">← sair da fila</button>
+  </section>
+
+  <!-- 4. É a tua vez -->
+  <section id="screen-turn" class="screen">
+    <img class="turn-burst" src="img/turn-burst.webp" alt="" aria-hidden="true">
+    <div class="lcd lcd-standalone">
+      <div class="lcd-line lcd-blink">É A TUA VEZ!</div>
+      <div class="lcd-line">jogador <span id="turn-player">–</span> · <span id="turn-color-name">–</span></div>
+      <div class="lcd-line lcd-big"><span id="turn-seconds">15</span>s</div>
+    </div>
+    <button class="btn-confirm" id="btn-confirm" type="button">CONFIRMAR</button>
+  </section>
+
+  <!-- 5. Telefone / a jogar -->
+  <section id="screen-phone" class="screen">
+    <div class="phone-body">
+
+      <div class="top-row">
+        <div class="color-tag" id="color-tag">
+          <span class="color-dot" id="color-dot"></span>
+          <span class="color-name" id="color-name">—</span>
+        </div>
+      </div>
+
+      <div class="lcd" id="phone-lcd">
+        <div class="lcd-line" id="lcd-status">PRONTO</div>
+        <div class="lcd-line lcd-digits" id="lcd-digits">&nbsp;</div>
+      </div>
+
+      <!-- Em qual dos quatro quadrantes do ecrã grande esta pessoa está a
+           jogar. O ícone é o mesmo ficheiro que o jogo desenha no canto do
+           quadrante (game/resources/images/phoneN_small.png), para se
+           reconhecer de relance na parede. Fica na faixa entre o LCD e o
+           teclado, e por cima do desfoque de "antes de atender" — é
+           precisamente antes de atender que se procura o sítio. -->
+      <p class="screen-here" id="screen-here" hidden>
+        <span>ESTÁS A JOGAR NO ECRÃ:</span>
+        <!-- Sem `src` até haver lugar atribuído: `src=""` resolve para o
+             próprio documento e o browser pede a página outra vez. É o JS
+             que o põe (ver markQuadrant em phone.js). -->
+        <img id="screen-here-icon" alt="">
+      </p>
+
+      <div class="keypad">
+        <button class="key" data-key="1" type="button"><span class="key-num">1</span></button>
+        <button class="key" data-key="2" type="button"><span class="key-num">2</span><span class="key-letters">ABC</span></button>
+        <button class="key" data-key="3" type="button"><span class="key-num">3</span><span class="key-letters">DEF</span></button>
+        <button class="key" data-key="4" type="button"><span class="key-num">4</span><span class="key-letters">GHI</span></button>
+        <button class="key" data-key="5" type="button"><span class="key-num">5</span><span class="key-letters">JKL</span></button>
+        <button class="key" data-key="6" type="button"><span class="key-num">6</span><span class="key-letters">MNO</span></button>
+        <button class="key" data-key="7" type="button"><span class="key-num">7</span><span class="key-letters">PQRS</span></button>
+        <button class="key" data-key="8" type="button"><span class="key-num">8</span><span class="key-letters">TUV</span></button>
+        <button class="key" data-key="9" type="button"><span class="key-num">9</span><span class="key-letters">WXYZ</span></button>
+        <button class="key key-star" data-key="*" type="button"><span class="key-num">*</span></button>
+        <button class="key" data-key="0" type="button"><span class="key-num">0</span></button>
+        <button class="key key-hash" data-key="#" type="button"><span class="key-num">#</span></button>
+      </div>
+
+      <!-- Camada de desfoque antes de atender: cobre o LCD e o teclado (que
+           ainda não servem para nada) para que a única coisa acionável no
+           ecrã seja o auscultador ao centro. CRÍTICO (já foi um P0 aqui,
+           ver phone.css): ao atender, este `hidden` tem de SAIR do layout,
+           não só ficar transparente — senão fica a comer os toques do
+           teclado por trás. Ver toggle em phone.js junto do handset. -->
+      <div class="pre-answer-blur" id="pre-answer-blur" aria-hidden="true"></div>
+
+      <!-- O auscultador é o botão de começar (é o offhook que tira o jogo do
+           attract — ver game/tv_show/attract.py). Enquanto não se está em
+           chamada é a única ação possível no ecrã, por isso fica ao centro,
+           grande, sobre a camada de desfoque acima; depois de atender vira o
+           botão de desligar e recolhe para um cantinho, porque a atenção
+           passa a ser o teclado (ver phone.css/js). -->
+      <button class="handset" id="handset-btn" type="button" aria-label="Atender e começar a jogar">
+        <svg viewBox="0 0 64 32" class="handset-icon" id="handset-icon">
+          <path d="M4 6 C4 2 8 0 12 2 L20 10 C22 12 22 15 20 17 L17 20 C22 26 27 29 33 27 L36 24 C38 22 41 22 43 24 L51 32 C53 34 51 38 47 38 L60 26 C47 12 34 4 4 6 Z" />
+        </svg>
+        <span class="handset-label" id="handset-label">ATENDER</span>
+      </button>
+
+    </div>
+  </section>
+
+  <!-- 6. Fim de partida — nome. Chega ao ecrã via {"type":"finished"} (ver
+       phone.js); teclado próprio (não o do sistema, que tapa o ecrã) gerado
+       por JS em #namepad, estilo recordes de sala de jogos. -->
+  <section id="screen-name" class="screen">
+    <div class="lcd lcd-standalone">
+      <div class="lcd-line">ESCREVE O TEU NOME</div>
+      <div class="lcd-line lcd-digits" id="name-buffer">&nbsp;</div>
+    </div>
+    <div class="namepad" id="namepad"></div>
+  </section>
+
+  <!-- 7. Fim de partida — top10 do dia. Último ecrã: sem botão de voltar, o
+       bloqueio é deliberado (para jogar de novo é preciso ler o QR outra
+       vez e entrar na fila — ver phone.js/onReleased). -->
+  <section id="screen-top10" class="screen">
+    <!-- Último ecrã que a pessoa vê, e por isso o que fica na fotografia que
+         ela tira: Hugo em cima, os cinco melhores no meio, a marca do evento
+         em baixo. Se um dos logótipos faltar em disco, esconde-se sozinho
+         (ver o onerror) em vez de deixar o ícone de imagem partida. -->
+    <img class="top10-logo-hugo" src="img/hugo.png" alt="Hugo"
+         onerror="this.style.display='none'">
+    <div class="lcd lcd-standalone">
+      <div class="lcd-line">TOP 5 DE HOJE</div>
+    </div>
+    <ol class="top10-list" id="top10-list"></ol>
+    <p class="top10-note">Para voltar a jogar, lê o QR outra vez e entra na fila.</p>
+    <img class="top10-logo-revenge" src="img/revenge.png" alt="Revenge of the 90s"
+         onerror="this.style.display='none'">
+  </section>
+
+  <!-- 8. Despedida — desligar manual (auscultador enquanto offHook, ver
+       phone.js). Ecrã final igual em espírito ao top10: sem botão de
+       voltar, sem ATENDER, sem forma de reentrar — para jogar outra vez é
+       preciso ler o QR outra vez. NÃO é o mesmo caminho que o fim natural
+       do jogo (finished -> screen-name -> screen-top10), que se mantém
+       como está. -->
+  <section id="screen-bye" class="screen">
+    <div class="bye-box">
+      <img class="bye-logo" src="img/logo.png" alt="">
+      <p class="bye-text">ATÉ À PRÓXIMA!</p>
+    </div>
+  </section>
+
+</div>
+
+<div class="reconnect-dot" id="reconnect-dot" hidden></div>
+
+<script src="dtmf.js"></script>
+<script src="game-audio.js"></script>
+<script src="phone.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!--
+    Dialplan do evento: um único contexto, "hugo-lan", para onde o perfil
+    "internal" (ver sip_profiles/internal.xml) manda tudo o que chega pela
+    LAN. Atende e estaciona ("park") a chamada — não faz mais nada aqui de
+    propósito: o áudio para o auscultador é o passo seguinte (ver
+    bridge/README.md), e "park" segura o canal indefinidamente sem tocar
+    nada, o suficiente para o bridge/adapters/sip_adapter.py (ligado por ESL)
+    ver CHANNEL_ANSWER, DTMF e CHANNEL_HANGUP_COMPLETE e encaminhá-los ao
+    SlotManager. Quando o áudio for a seguir, entra aqui — não noutro sítio.
+
+    Qualquer dígitos como destino (o telefone dial um alvo à escolha, ex.:
+    9001, 9002... um por telefone — é o que identifica cada linha, ver
+    bridge/freeswitch/README.md) cai na mesma extensão.
+-->
+<include>
+  <context name="hugo-lan">
+    <extension name="atende-e-estaciona">
+      <condition field="destination_number" expression="^(.*)$">
+        <action application="answer"/>
+        <action application="park"/>
+      </condition>
+    </extension>
+  </context>
+</include>

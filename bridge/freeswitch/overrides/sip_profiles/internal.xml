@@ -1,0 +1,124 @@
+<!--
+    Perfil "internal" de origem (Homebrew, FreeSWITCH 1.11.1), reaproveitado
+    para a LAN do evento em vez de criar um perfil novo — já escuta certo em
+    $${local_ip_v4}:5060 (confirmado), só faltava apontar o contexto para o
+    nosso dialplan e tirar a autenticação. Duas alterações reais a este
+    ficheiro (procura "ALTERADO"), resto: inalterado.
+
+    Decisão: chamada IP directa, sem registo.
+    Os Yealink T30 fazem chamada IP directa de fábrica
+    (features.direct_ip_call_enable=1) — nada para aprovisionar. A
+    alternativa (registo) obrigava a criar uma conta com password em
+    directory/default/*.xml E introduzir usuário/password em cada telefone
+    à mão no dia do evento, com o registo a poder cair/expirar a meio —
+    mais peças móveis, mais coisas para falhar em palco. Com auth-calls a
+    "false" aqui, qualquer INVITE que chegue a este perfil é atendido sem
+    desafio — aceitável porque o perfil só está à escuta na interface da
+    LAN do evento (192.168.1.198), não em 0.0.0.0; quem não estiver
+    fisicamente naquela rede não lhe chega.
+
+    Identificação do telefone: pelo destino da chamada (a extensão
+    marcada), não pelo caller ID — ver bridge/adapters/sip_adapter.py e
+    bridge/freeswitch/README.md ("cada telefone dial um alvo distinto").
+-->
+<profile name="internal">
+  <aliases>
+    <!--
+        <alias name="default"/>
+    -->
+  </aliases>
+  <gateways>
+  </gateways>
+
+  <domains>
+    <domain name="all" alias="true" parse="false"/>
+  </domains>
+
+  <settings>
+    <param name="debug" value="0"/>
+    <param name="sip-trace" value="no"/>
+    <param name="sip-capture" value="no"/>
+    <param name="watchdog-enabled" value="no"/>
+    <param name="watchdog-step-timeout" value="30000"/>
+    <param name="watchdog-event-timeout" value="30000"/>
+    <param name="log-auth-failures" value="false"/>
+    <param name="forward-unsolicited-mwi-notify" value="false"/>
+
+    <!-- ALTERADO: era "public" (IVR de demonstração do FreeSWITCH); aponta
+         para o nosso dialplan — ver dialplan/hugo-lan.xml. -->
+    <param name="context" value="hugo-lan"/>
+
+    <param name="rfc2833-pt" value="101"/>
+    <param name="sip-port" value="$${internal_sip_port}"/>
+    <param name="dialplan" value="XML"/>
+    <param name="dtmf-duration" value="2000"/>
+    <!-- Os Yealink T30 suportam RFC2833, SIP INFO, ou os dois
+         (account.X.dtmf.type) — não fixamos aqui um único tipo, para não
+         partir o que quer que o telefone use; o core do FreeSWITCH trata os
+         dois lados sem precisar de escolher. Se em teste com telefone real
+         os dígitos não chegarem, o primeiro sítio a olhar é o dtmf.type
+         configurado no telefone, não este ficheiro. -->
+    <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="outbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="rtp-timer-name" value="soft"/>
+    <param name="rtp-ip" value="$${local_ip_v4}"/>
+    <param name="sip-ip" value="$${local_ip_v4}"/>
+    <param name="hold-music" value="$${hold_music}"/>
+    <param name="apply-nat-acl" value="nat.auto"/>
+    <!-- ALTERADO: era "domains" (só permite IPs com cidr= num utilizador do
+         directory — não temos nenhum, portanto negava tudo, confirmado em
+         teste: "IP ... Rejected by acl 'domains'" e a chamada nem chegava
+         ao dialplan). "localnet.auto" é a ACL que o próprio FreeSWITCH já
+         calcula a partir da sub-rede local (ver switch_core.c no arranque:
+         "Adding 192.168.1.198/255.255.255.0 ... to list localnet.auto") —
+         é a fronteira real que queremos: dentro da LAN do evento, entra. -->
+    <param name="apply-inbound-acl" value="localnet.auto"/>
+    <param name="local-network-acl" value="localnet.auto"/>
+    <param name="record-path" value="$${recordings_dir}"/>
+    <param name="record-template" value="${caller_id_number}.${target_domain}.${strftime(%Y-%m-%d-%H-%M-%S)}.wav"/>
+    <param name="manage-presence" value="true"/>
+    <param name="presence-hosts" value="$${domain},$${local_ip_v4}"/>
+    <param name="presence-privacy" value="$${presence_privacy}"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+
+    <param name="tls" value="$${internal_ssl_enable}"/>
+    <param name="tls-only" value="false"/>
+    <param name="tls-bind-params" value="transport=tls"/>
+    <param name="tls-sip-port" value="$${internal_tls_port}"/>
+    <param name="tls-passphrase" value=""/>
+    <param name="tls-verify-date" value="true"/>
+    <param name="tls-verify-policy" value="none"/>
+    <param name="tls-verify-depth" value="2"/>
+    <param name="tls-verify-in-subjects" value=""/>
+    <param name="tls-version" value="$${sip_tls_version}"/>
+    <param name="tls-ciphers" value="$${sip_tls_ciphers}"/>
+
+    <param name="inbound-late-negotiation" value="true"/>
+
+    <param name="nonce-ttl" value="60"/>
+
+    <!-- ALTERADO: era $${internal_auth_calls} (herda "true" de vars.xml).
+         Fixo a "false" só neste perfil — ver "Decisão" no topo do
+         ficheiro. Não mexe em internal_auth_calls, que fica como estava. -->
+    <param name="auth-calls" value="false"/>
+
+    <param name="auth-subscriptions" value="true"/>
+    <param name="inbound-reg-force-matching-username" value="true"/>
+    <param name="auth-all-packets" value="false"/>
+
+    <param name="ext-rtp-ip" value="$${external_rtp_ip}"/>
+    <param name="ext-sip-ip" value="$${external_sip_ip}"/>
+
+    <param name="rtp-timeout-sec" value="300"/>
+    <param name="rtp-hold-timeout-sec" value="1800"/>
+
+    <param name="force-register-domain" value="$${domain}"/>
+    <param name="force-subscription-domain" value="$${domain}"/>
+    <param name="force-register-db-domain" value="$${domain}"/>
+
+    <param name="ws-binding" value=":5066"/>
+    <param name="wss-binding" value=":7443"/>
+
+    <param name="challenge-realm" value="auto_from"/>
+  </settings>
+</profile>

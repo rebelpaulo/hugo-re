@@ -20,7 +20,10 @@ class Config:
     # Sistema; caso contrário é preciso carregar em Fn ao mesmo tempo.
     BTN_OFF_HOOK = [(pygame.K_F1,), (pygame.K_F3,), (pygame.K_F5,), (pygame.K_F7,)]
     BTN_HUNG_UP = [(pygame.K_F2,), (pygame.K_F4,), (pygame.K_F6,), (pygame.K_F8,)]
-    BTN_EXIT = pygame.K_F12
+    # Não há tecla de saída. Havia F12 (`BTN_EXIT`), e o upstream fechava
+    # também a qualquer clique esquerdo — num evento, com o ecrã ao alcance
+    # de toda a gente, é fechar o jogo à frente da sala. Fecha-se por Cmd+Q,
+    # por fechar a janela, ou parando o supervisor.
 
     # Cada jogador tem um tuplo de teclas aceites para o mesmo botão.
     #
@@ -39,7 +42,14 @@ class Config:
     BTN_9 = [(pygame.K_d,), (pygame.K_h,), (pygame.K_l,), (pygame.K_KP9, pygame.K_n)]
     BTN_0 = [(pygame.K_z,), (pygame.K_x,), (pygame.K_c,), (pygame.K_KP0, pygame.K_b)]
 
-    COUNTRIES = ["ar", "cl", "dn", "fr"]
+    COUNTRIES = ["pt1", "pt2", "pt3", "pt4"]
+
+    # Os 4 quadrantes precisam de chaves distintas em COUNTRIES para que os
+    # dicionários de recursos em TvShowResources (indexados por país) lhes
+    # dêem objetos Video/áudio independentes. Este mapa diz a cada chave qual
+    # a pasta de assets a carregar — os quatro quadrantes PT apontam para a
+    # mesma pasta "pt", mas cada um fica com o seu próprio Video.
+    COUNTRY_ASSETS = {"pt1": "pt", "pt2": "pt", "pt3": "pt", "pt4": "pt"}
 
     GAMES = {
         "Forest": {

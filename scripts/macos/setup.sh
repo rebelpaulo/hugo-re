@@ -68,6 +68,17 @@ echo "-- a atualizar pip --"
 "$VENV_DIR/bin/python3" -m pip install --upgrade pip -q
 
 echo "-- a instalar as versões validadas para o espetáculo --"
-"$VENV_DIR/bin/python3" -m pip install -q -r "$REQUIREMENTS_LOCK"
+# --no-deps é deliberado: o requirements-lock.txt é um lock completo (todas as
+# transitivas já vêm listadas), e sem --no-deps o pip iria resolver a
+# dependência de instalação do pyvidplayer2 e puxar o opencv-python de volta —
+# o que reintroduz o libSDL2 duplicado (ver comentário no requirements-lock.txt).
+"$VENV_DIR/bin/python3" -m pip install -q --no-deps -r "$REQUIREMENTS_LOCK"
+
+if "$VENV_DIR/bin/python3" -c "import cv2" >/dev/null 2>&1; then
+  echo "ERRO: o cv2 (opencv) está instalado neste .venv." >&2
+  echo "       Isso reintroduz o libSDL2 duplicado (aviso objc, risco de crash)." >&2
+  echo "       Remove-o: $VENV_DIR/bin/pip uninstall -y opencv-python opencv-python-headless" >&2
+  exit 1
+fi
 
 echo "-- feito. Corre scripts/macos/check.sh para confirmar que está tudo ok. --"

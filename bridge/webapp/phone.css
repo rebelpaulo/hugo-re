@@ -1,0 +1,649 @@
+/* Telefone dos anos 90 — plástico cinzento-creme, LCD verde.
+   Modo retrato, ecrã cheio, alvos grandes para usar às escuras e com uma mão. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #1c1c19;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  background:
+    /* vinheta: escurece as quatro margens por cima da textura */
+    radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.30) 100%),
+    /* sombra de canto original, sobre a textura */
+    radial-gradient(ellipse at 25% 0%, rgba(20,19,15,0.35) 0%, transparent 55%),
+    url("img/plastic-texture.webp") center / cover no-repeat;
+  overflow: hidden;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+}
+.screen.active { display: flex; }
+
+/* ---------- Splash — primeiro ecrã, espera pelo primeiro toque (ver phone.js) ---------- */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  background: #100f0d;
+  opacity: 1;
+  transition: opacity 350ms ease;
+  animation: splash-flicker 150ms steps(1);
+}
+/* Durante o crossfade a splash ainda está no ecrã mas já não deve apanhar
+   toques — senão os primeiros 350 ms de teclado são engolidos. */
+.splash.hide { opacity: 0; pointer-events: none; }
+
+/* CRÍTICO: sem isto a splash fica invisível mas continua no layout, por
+   cima de tudo, a comer TODOS os toques — o teclado inteiro fica morto e
+   não há nada no ecrã que o explique. O `display: flex` acima é uma regra
+   de autor e vence o `[hidden] { display: none }` do browser, portanto o
+   atributo hidden sozinho não chega. Aconteceu mesmo, num Android real. */
+.splash[hidden] { display: none; }
+.splash-logo {
+  width: min(80vw, 360px);
+  height: auto;
+  filter: drop-shadow(0 10px 26px rgba(0,0,0,0.55));
+}
+/* Legível às escuras: cor clara, sem depender de contraste extra — o
+   próprio piscar (.lcd-blink, opacidade mínima 0.35) nunca a apaga de todo. */
+.splash-tap-line {
+  margin: 0;
+  font: 700 5.2vw/1.3 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  letter-spacing: 3px;
+  color: #efe9d8;
+  text-align: center;
+}
+@keyframes splash-flicker {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  24%  { opacity: 0.15; }
+  36%  { opacity: 1; }
+  50%  { opacity: 0.4; }
+  70%  { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+/* ---------- Aviso de fallback em input_mode=sip (ver bridge/config.yaml e
+   phone.js) — alguém chegou à webapp num evento que é só telefones. Não é o
+   percurso normal, por isso fica deliberadamente curto. ---------- */
+
+.sip-box {
+  margin: auto;
+  background: #33322b;
+  border-radius: 18px;
+  padding: 26px 22px;
+  max-width: 480px;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.sip-text {
+  font-size: 5vw;
+  line-height: 1.5;
+  color: #efe9d8;
+  text-align: center;
+  margin: 0;
+}
+
+.btn-back {
+  margin-top: auto;
+  margin-bottom: 6vh;
+  background: none;
+  border: none;
+  color: #34342e;
+  font-size: 4.4vw;
+  font-weight: 700;
+  padding: 16px 20px;
+}
+
+/* ---------- LCD (comum a vários ecrãs) ---------- */
+
+.lcd {
+  width: 100%;
+  max-width: 420px;
+  background: #7c9a3a;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.06) 0px, rgba(0,0,0,0.06) 1px, transparent 1px, transparent 3px);
+  border: 3px solid #3f4a26;
+  border-radius: 6px;
+  padding: 16px 14px;
+  box-shadow: inset 0 3px 8px rgba(0,0,0,0.45), inset 0 0 20px rgba(0,0,0,0.2);
+  color: #16330f;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  text-shadow: 0 0 2px rgba(22,51,15,0.4);
+}
+.lcd-standalone { margin-top: 14vh; }
+.lcd-line {
+  font-size: 5vw;
+  letter-spacing: 2px;
+  text-align: center;
+  padding: 4px 0;
+}
+.lcd-big { font-size: 11vw; }
+.lcd-digits { min-height: 8vw; font-size: 7vw; letter-spacing: 6px; }
+.lcd-blink { animation: lcdblink 1s steps(1) infinite; }
+@keyframes lcdblink { 50% { opacity: 0.35; } }
+
+/* ---------- Fila ---------- */
+
+.queue-note {
+  max-width: 380px;
+  text-align: center;
+  color: #4a4a42;
+  font-size: 3.8vw;
+  margin-top: 22px;
+}
+/* zona morta entre a nota e os pontos — padrão tipo bilhete picotado, só CSS */
+.queue-deco {
+  flex: 1;
+  width: 100%;
+  max-width: 380px;
+  min-height: 40px;
+  margin: 20px auto 0;
+  position: relative;
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(58,58,52,0.10) 0px, rgba(58,58,52,0.10) 2px,
+    transparent 2px, transparent 16px
+  );
+}
+.queue-deco::before,
+.queue-deco::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 0;
+  border-top: 3px dashed rgba(58,58,52,0.35);
+}
+.queue-deco::before { top: 0; }
+.queue-deco::after { bottom: 0; }
+.queue-dots {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  margin-bottom: 10vh;
+}
+.queue-dots span {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #7c9a3a;
+  animation: queuepulse 1.2s ease-in-out infinite;
+}
+.queue-dots span:nth-child(2) { animation-delay: .2s; }
+.queue-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes queuepulse { 0%,80%,100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+
+/* ---------- É a tua vez ---------- */
+
+#screen-turn { position: relative; }
+.turn-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 135vw;
+  max-width: 620px;
+  transform: translate(-50%, -50%);
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 0;
+}
+#screen-turn .lcd,
+#screen-turn .btn-confirm {
+  position: relative;
+  z-index: 1;
+}
+
+.btn-confirm {
+  margin-top: 8vh;
+  width: 78vw;
+  max-width: 340px;
+  padding: 22px 0;
+  border-radius: 18px;
+  border: none;
+  background: linear-gradient(180deg, #d4634a 0%, #b13f28 100%);
+  box-shadow: 0 5px 0 #7a2416, 0 10px 18px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.35);
+  color: #fff2ea;
+  font-size: 6vw;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+.btn-confirm:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #7a2416, 0 3px 8px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+
+/* ---------- Telefone / teclado ---------- */
+
+.phone-body {
+  position: relative;   /* âncora para a camada de desfoque e o auscultador centrado */
+  width: 100%;
+  max-width: 420px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+/* ---------- Camada de desfoque antes de atender ---------- */
+/* Cobre o LCD e o teclado (nada disso serve para nada antes de atender) para
+   que o auscultador ao centro seja a única coisa que salta à vista.
+   backdrop-filter: blur() é suportado no Chrome Android desde a v76 (2019),
+   por isso funciona no telemóvel-alvo — mas o rgba() de fundo por baixo é
+   sempre aplicado, com ou sem suporte a backdrop-filter, e sozinho já
+   escurece e esconde os detalhes do teclado. É a rede de segurança: em vez
+   de um ecrã por desfocar num browser mais velho, fica um ecrã escurecido —
+   pior visualmente, nunca ilegível. */
+.pre-answer-blur {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(14,13,10,0.55);
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
+}
+/* CRÍTICO — mesma lição do splash (ver acima): ao atender isto tem de SAIR
+   do layout, não só ficar transparente/invisível, senão continua a comer
+   todos os toques do teclado por trás. `hidden` chega aqui porque não há
+   nenhuma regra de `display` a competir com o `[hidden]{display:none}` do
+   browser para esta classe. */
+.pre-answer-blur[hidden] { display: none; }
+
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Por cima do desfoque de "antes de atender" (z-index 5). O que está por
+     baixo — LCD e teclado — ainda não serve para nada e é desfocado de
+     propósito, mas saber em que quadrante se está é precisamente o que se
+     quer ver ANTES de atender, para procurar o sítio na parede. Só precisa
+     de `position` para o z-index pegar; não intercepta toques (não tem nada
+     clicável), portanto não estraga o auscultador ao centro. */
+  position: relative;
+  z-index: 10;
+  /* O corpo do telefone não tem margem interior — o LCD e o teclado são
+     mesmo de bordo a bordo por desenho. Aqui é texto, e texto colado ao
+     bordo lê-se mal. */
+  padding: 0 6px;
+}
+
+/* "Estás a jogar no ecrã: <ícone>" — a faixa entre o LCD e o teclado, que
+   estava vazia. Só o quadrante desta pessoa; mostrar os quatro obrigava a
+   procurar-se a si própria no desenho, que é trabalho a mais para quem está
+   de pé numa sala cheia. Fica escondido enquanto não houver lugar atribuído,
+   para nunca apontar para o sítio errado. */
+.screen-here {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  /* Chapa própria, cor das teclas. Sem ela o texto cinzento ficava por cima
+     do véu escuro do "antes de atender" e não se lia; e uma cor clara que
+     resolvesse isso deixava de se ler depois de atender, quando o fundo volta
+     a ser bege. Assim lê-se nos dois estados. */
+  width: fit-content;
+  margin: 10px auto;
+  padding: 7px 14px;
+  background: rgba(244, 241, 228, 0.93);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  font-size: 3.4vw;
+  font-weight: 700;
+  color: #34342e;
+  letter-spacing: 1px;
+  /* Por cima do desfoque de "antes de atender" (z-index 5): é antes de
+     atender que se procura o quadrante na parede. Não tem nada clicável, por
+     isso não rouba o toque ao auscultador. */
+  position: relative;
+  z-index: 10;
+}
+.screen-here[hidden] { display: none; }
+.screen-here img {
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 2px #ffdd00;
+}
+
+.color-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+.color-dot {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #888;
+  box-shadow:
+    inset 0 0 3px rgba(0,0,0,0.5),
+    0 0 6px currentColor,
+    0 0 14px currentColor,
+    0 0 22px currentColor;
+  border: 2px solid rgba(255,255,255,0.5);
+}
+.color-name {
+  font-size: 3.8vw;
+  font-weight: 700;
+  color: #34342e;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* O auscultador é o botão de começar (ver phone.js/attract.py no jogo) — quem
+   ainda não entrou tem de o identificar num relance, no escuro, sem
+   instruções. Por isso, enquanto não se está em chamada, é a ÚNICA coisa
+   acionável do ecrã: um "telefone" redondo e dourado ao centro, por cima da
+   camada de desfoque (.pre-answer-blur acima), com halo a pulsar e rótulo
+   "ATENDER" — o ícone sozinho é o que o cliente não reconheceu. Em chamada o
+   mesmo botão vira "DESLIGAR", volta ao fluxo normal do ecrã e recolhe para
+   um cantinho discreto, porque aí a atenção passa a ser o teclado. */
+.handset {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;   /* por cima de .pre-answer-blur (z-index 5) */
+  width: 42vw;
+  height: 42vw;
+  max-width: 190px;
+  max-height: 190px;
+  border: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #f3d372 0%, #e8b93f 45%, #c4901f 100%);
+  box-shadow: 0 6px 0 #8a6412, 0 14px 30px rgba(0,0,0,0.5), inset 0 2px 0 rgba(255,255,255,0.45);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  animation: handset-pulse 1.8s ease-in-out infinite;
+  transition: all 160ms ease-out;
+}
+@keyframes handset-pulse {
+  0%, 100% { box-shadow: 0 6px 0 #8a6412, 0 14px 30px rgba(0,0,0,0.5), 0 0 0 rgba(232,185,63,0.6), inset 0 2px 0 rgba(255,255,255,0.45); }
+  50% { box-shadow: 0 6px 0 #8a6412, 0 14px 30px rgba(0,0,0,0.5), 0 0 32px 10px rgba(232,185,63,0.6), inset 0 2px 0 rgba(255,255,255,0.45); }
+}
+/* Em chamada: já não é preciso ocupar o centro do ecrã — volta ao fluxo
+   normal (mesma posição no HTML, entre o top-row e o LCD) e recolhe para um
+   botão discreto encostado ao canto direito, como o corpo de um telefone a
+   sério, com a atenção a passar para o teclado por baixo. */
+.handset.off-hook {
+  position: static;
+  transform: none;
+  align-self: flex-end;
+  width: auto;
+  height: auto;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  flex-direction: row;
+  background: linear-gradient(180deg, #d4634a 0%, #b13f28 100%);
+  box-shadow: 0 3px 0 #7a2416, inset 0 1px 0 rgba(255,255,255,0.35);
+  animation: none;
+}
+.handset:active { transform: translate(-50%, -50%) scale(0.96); }
+.handset.off-hook:active { transform: translateY(2px); }
+.handset-icon { width: 40px; height: 20px; fill: #4a3410; flex-shrink: 0; }
+.handset.off-hook .handset-icon { width: 30px; height: 15px; fill: #fff2ea; transform: rotate(135deg); }
+.handset-label {
+  font-size: 5.2vw;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #4a3410;
+  white-space: nowrap;
+}
+.handset.off-hook .handset-label { font-size: 3.6vw; color: #fff2ea; }
+
+.keypad {
+  margin-top: auto;
+  margin-bottom: env(safe-area-inset-bottom);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.key {
+  aspect-ratio: 1.3 / 1;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f0ebdd 0%, #d2cdb6 100%);
+  box-shadow:
+    0 5px 0 #8f8b78,
+    0 9px 12px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #34342e;
+  /* Sem isto o Android põe um retângulo cinzento por cima da tecla ao tocar,
+     que estraga o efeito de plástico. E `manipulation` tira o atraso de
+     espera pelo duplo-toque. */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  transition: transform 40ms ease-out, box-shadow 40ms ease-out;
+}
+/* A tecla afunda até ao fim do curso — nada de meio caminho. Num sítio
+   escuro e com barulho, o toque tem de ser inequívoco: quem carrega tem de
+   ver que carregou, sem olhar duas vezes. O halo verde é o mesmo do LCD, e
+   dá um segundo sinal para quem estiver a segurar o telemóvel de lado. */
+.key:active,
+.key.pressed {
+  transform: translateY(5px);
+  background: linear-gradient(180deg, #c8c3ab 0%, #b2ad95 100%);
+  box-shadow:
+    0 0 0 #8f8b78,
+    0 1px 3px rgba(0,0,0,0.35),
+    0 0 14px rgba(124,154,58,0.55),
+    inset 0 2px 5px rgba(0,0,0,0.28);
+}
+/* O número acompanha, senão a tecla afunda e o texto parece flutuar. */
+.key:active .key-num,
+.key.pressed .key-num { color: #1e1e1a; }
+.key-num { font-size: 8vw; font-weight: 800; line-height: 1; }
+.key-letters { font-size: 2.6vw; letter-spacing: 2px; color: #6b6b5f; margin-top: 2px; }
+.key-star .key-num, .key-hash .key-num { font-size: 7vw; }
+
+/* ---------- Fim de partida: nome (teclado próprio, estilo recordes de
+   sala de jogos) ---------- */
+
+.namepad {
+  width: 100%;
+  max-width: 420px;
+  margin-top: 4vh;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.namekey {
+  aspect-ratio: 1 / 1;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f0ebdd 0%, #d2cdb6 100%);
+  box-shadow:
+    0 4px 0 #8f8b78,
+    0 7px 10px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.7);
+  color: #34342e;
+  font-size: 4.6vw;
+  font-weight: 800;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  transition: transform 40ms ease-out, box-shadow 40ms ease-out;
+}
+.namekey:active,
+.namekey.pressed {
+  transform: translateY(4px);
+  background: linear-gradient(180deg, #c8c3ab 0%, #b2ad95 100%);
+  box-shadow:
+    0 0 0 #8f8b78,
+    0 1px 2px rgba(0,0,0,0.3),
+    0 0 12px rgba(124,154,58,0.5),
+    inset 0 2px 4px rgba(0,0,0,0.25);
+}
+.namekey-del {
+  background: linear-gradient(180deg, #d9a888 0%, #b5754f 100%);
+  color: #fff2ea;
+  font-size: 3.4vw;
+}
+.namekey-space {
+  grid-column: span 3;
+  aspect-ratio: auto;
+  font-size: 3.2vw;
+  letter-spacing: 2px;
+}
+.namekey-ok {
+  grid-column: span 2;
+  aspect-ratio: auto;
+  background: linear-gradient(180deg, #9fc25a 0%, #6f9a2f 100%);
+  color: #f4fbe6;
+  font-size: 4vw;
+  letter-spacing: 2px;
+}
+.namekey[disabled] { opacity: 0.5; }
+
+/* ---------- Fim de partida: top 5 do dia (ecrã final, sem volta) ---------- */
+
+/* Este é o ecrã em que a pessoa fica, e o que ela fotografa. Hugo em cima, a
+   marca do evento em baixo, os cinco no meio. São cinco e não dez
+   precisamente para caberem os três sem nada rolar. */
+.top10-logo-hugo {
+  width: 60vw;
+  max-width: 300px;
+  height: auto;
+  margin-bottom: 2vh;
+}
+/* `.lcd-standalone` traz 14vh de margem de topo, que serve nos ecrãs em que o
+   LCD é a primeira coisa. Aqui tem o logo por cima, e essa margem virava um
+   buraco de 130px entre os dois. */
+#screen-top10 .lcd-standalone { margin-top: 0; }
+.top10-logo-revenge {
+  width: 80vw;
+  max-width: 400px;
+  height: auto;
+  margin-top: auto;   /* empurra-se para o fundo do ecrã */
+  padding-top: 2vh;
+}
+/* A nota desce com a marca, em vez de ficar colada à lista com 193px de nada
+   por baixo (medido). O espaço que sobra fica entre a lista e o rodapé, onde
+   se lê como respiração e não como buraco. */
+#screen-top10 .top10-note { margin-top: auto; }
+
+.top10-list {
+  list-style: none;
+  margin: 3vh 0 0;
+  padding: 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+.top10-row {
+  display: grid;
+  grid-template-columns: 2.2em 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: #efe9d8;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  font-size: 4vw;
+}
+.top10-rank { color: #b8b2a0; text-align: right; }
+.top10-name { letter-spacing: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top10-score { text-align: right; }
+.top10-own {
+  background: linear-gradient(180deg, rgba(232,185,63,0.35), rgba(232,185,63,0.15));
+  box-shadow: 0 0 0 2px #e8b93f, 0 0 18px rgba(232,185,63,0.5);
+  color: #fff2ea;
+}
+.top10-note {
+  max-width: 380px;
+  text-align: center;
+  color: #4a4a42;
+  font-size: 3.8vw;
+  margin-top: 20px;
+}
+
+/* ---------- Despedida — desligar manual (ecrã final, sem volta) ---------- */
+
+.bye-box {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.bye-logo {
+  width: min(70vw, 320px);
+  height: auto;
+  filter: drop-shadow(0 10px 26px rgba(0,0,0,0.55));
+}
+.bye-text {
+  margin: 0;
+  font-size: 7vw;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #efe9d8;
+  text-align: center;
+}
+
+/* ---------- Indicador discreto de reconexão ---------- */
+
+.reconnect-dot {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: 14px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #d4634a;
+  box-shadow: 0 0 6px #d4634a;
+  animation: lcdblink 0.8s steps(1) infinite;
+  z-index: 50;
+}
+
+/* ---------- Cores de jogador ---------- */
+
+.c-blue   { color: #3f6fd4; }
+.c-green  { color: #4a9a3f; }
+.c-red    { color: #d4432f; }
+.c-white  { color: #d8d8d8; }
+.color-tag.c-blue  .color-dot { background: #3f6fd4; }
+.color-tag.c-green .color-dot { background: #4a9a3f; }
+.color-tag.c-red   .color-dot { background: #d4432f; }
+.color-tag.c-white .color-dot { background: #d8d8d8; }

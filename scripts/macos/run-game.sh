@@ -12,10 +12,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VENV_PY="$REPO_ROOT/.venv/bin/python3"
 GAME_DIR="$REPO_ROOT/game"
 
-ASSETS="${1:-${HUGO_ASSETS:-}}"
+# Mesmo caminho por omissão do Hugo.command, para arrancar o jogo sozinho sem
+# ter de repetir a pasta a cada vez.
+ASSETS="${1:-${HUGO_ASSETS:-$HOME/Claude code/hugo-assets/gold/BigFile}}"
 
-if [ -z "$ASSETS" ]; then
-  echo "ERRO: falta a pasta de dados (a 'BigFile' da gold version)." >&2
+if [ ! -d "$ASSETS" ]; then
+  echo "ERRO: não encontrei a pasta de dados (a 'BigFile' da gold version)." >&2
+  echo "Procurei em: $ASSETS" >&2
   echo "Usa: scripts/macos/run-game.sh /caminho/para/BigFile" >&2
   echo "ou:  export HUGO_ASSETS=/caminho/para/BigFile && scripts/macos/run-game.sh" >&2
   exit 1

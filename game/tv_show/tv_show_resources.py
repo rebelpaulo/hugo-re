@@ -27,8 +27,13 @@ class TvShowResources:
                     game_name in Config.GAMES.keys()}
 
         for country in Config.COUNTRIES:
-            prefix = f"resources/videos/{country}/"
-            audio_prefix = f"audio_for_videos/{country}/"
+            # A chave em COUNTRIES identifica o quadrante (pode ser repetida
+            # em espírito, ex. "pt1".."pt4"); a pasta de assets é a mapeada em
+            # COUNTRY_ASSETS, com fallback para a própria chave para os
+            # países originais (ar/cl/dn/fr) continuarem a funcionar.
+            assets = Config.COUNTRY_ASSETS.get(country, country)
+            prefix = f"resources/videos/{assets}/"
+            audio_prefix = f"audio_for_videos/{assets}/"
             
             TvShowResources.videos_attract[country] = Video(prefix + "attract_demo.avi", no_audio=True)
             TvShowResources.videos_initial[country] = Video(prefix + "hello_hello.avi", no_audio=True)

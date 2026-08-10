@@ -1,0 +1,19 @@
+<!--
+    Cópia do event_socket.conf.xml de origem (Homebrew, FreeSWITCH 1.11.1)
+    com UMA alteração: listen-ip. Era "::" (todas as interfaces, IPv4 e
+    IPv6) — numa máquina à escuta na LAN do evento, isso punha o canal de
+    controlo do FreeSWITCH (password de fábrica "ClueCon", dá para originar
+    chamadas e mais) acessível a qualquer coisa na mesma rede que os
+    telefones. `bridge/adapters/sip_adapter.py` só liga a 127.0.0.1 (ver
+    `bridge/config.yaml`, secção `sip`) — não há razão nenhuma para isto
+    estar aberto para fora da máquina. Resto do ficheiro: inalterado.
+-->
+<configuration name="event_socket.conf" description="Socket Client">
+  <settings>
+    <param name="nat-map" value="false"/>
+    <!-- ALTERADO: era "::" — só loopback, ver nota acima. -->
+    <param name="listen-ip" value="127.0.0.1"/>
+    <param name="listen-port" value="8021"/>
+    <param name="password" value="ClueCon"/>
+  </settings>
+</configuration>
