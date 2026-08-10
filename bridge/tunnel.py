@@ -78,25 +78,37 @@ class QuickTunnel:
         # ecrã que já não leva a lado nenhum, e nada nisto se nota sozinho.
         self._morreu = asyncio.Event()
 
-    def _comando_do_processo(self, pid: int) -> Optional[str]:
-        """Linha de comando de um PID, ou None se ele já não existir."""
+    def _identidade_do_processo(self, pid: int) -> Optional[str]:
+        """Hora de arranque + linha de comando de um PID, ou None se já não existir.
+
+        O PID sozinho não identifica nada: o sistema reaproveita-o. A linha de
+        comando também não chega — nada impede que o PID reaproveitado seja
+        outro `cloudflared tunnel --url` para a mesma porta, aberto pelo
+        operador. O que não se repete é o par (hora de arranque, comando):
+        um processo com o mesmo PID nascido noutro instante é outro processo.
+        Tudo numa só chamada ao `ps`, para os dois campos virem do mesmo
+        processo e não de dois momentos diferentes.
+        """
         try:
             saida = subprocess.run(
-                ["ps", "-p", str(pid), "-o", "command="],
+                ["ps", "-p", str(pid), "-o", "lstart=,command="],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
         except (OSError, subprocess.SubprocessError):
             return None
-        linha = saida.stdout.strip()
+        linha = " ".join(saida.stdout.split())
         return linha or None
 
     def _registar_dono(self, pid: int) -> None:
         """Deixa escrito que este cloudflared é nosso, e qual é."""
+        identidade = self._identidade_do_processo(pid) or ""
         try:
             self.pid_path.parent.mkdir(parents=True, exist_ok=True)
-            self.pid_path.write_text(f"{pid}\n{self._assinatura_comando()}\n", encoding="utf-8")
+            self.pid_path.write_text(
+                f"{pid}\n{self._assinatura_comando()}\n{identidade}\n", encoding="utf-8"
+            )
         except OSError as erro:
             LOGGER.debug("Não consegui registar o PID do cloudflared: %s", erro)
 
@@ -122,9 +134,12 @@ class QuickTunnel:
         adivinhar pela linha de comando: um `cloudflared tunnel --url` para a
         mesma porta pode ser de outra coisa que o operador tenha aberto, e
         matá-lo seria estragar-lhe o trabalho. Antes de mandar o sinal
-        confirma-se que o PID ainda existe E que o comando dele continua a ser
-        o nosso — um PID é reaproveitado pelo sistema mais depressa do que
-        parece.
+        confirma-se que o PID ainda existe E que continua a ser o mesmo
+        processo — mesma hora de arranque, mesmo comando. Só o comando não
+        chegava: um PID reaproveitado por OUTRO cloudflared para a mesma porta
+        passava o teste e levava com o sinal. Sem identidade guardada (o `ps`
+        falhou ao arrancar) não se mata nada: deixar um túnel a mais é menos
+        mau do que fechar o processo de outra pessoa.
         """
         try:
             registo = self.pid_path.read_text(encoding="utf-8").split("\n")
@@ -138,13 +153,16 @@ class QuickTunnel:
         assinatura = registo[1].strip() if len(registo) > 1 else ""
         if assinatura != self._assinatura_comando():
             return 0
+        identidade = registo[2].strip() if len(registo) > 2 else ""
+        if not identidade:
+            return 0
 
-        comando = self._comando_do_processo(pid)
-        if comando is None:
+        agora = self._identidade_do_processo(pid)
+        if agora is None:
             return 0  # já morreu, nada a fazer
-        if not comando.startswith(assinatura):
+        if agora != identidade:
             LOGGER.debug(
-                "PID %d já não é o nosso cloudflared (é %r) — deixado em paz", pid, comando[:60]
+                "PID %d já não é o nosso cloudflared (é %r) — deixado em paz", pid, agora[:60]
             )
             return 0
         try:
