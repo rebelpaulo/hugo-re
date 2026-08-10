@@ -11,7 +11,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from score_store import ScoreStore, clean_name
+from score_store import TOP_N, ScoreStore, clean_name
 
 
 def make_badwords_file(tmp_dir: Path) -> Path:
@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
 
 # ---------------------------------------------------------------------------
-# 3. top10: ordena por pontuação desc., limita a 10.
+# 3. quadro de honra: ordena por pontuação desc., limita a TOP_N.
 # ---------------------------------------------------------------------------
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -77,12 +77,15 @@ with tempfile.TemporaryDirectory() as tmp:
         store.set_pending_score(i % 4, i * 100)
         store.submit(i % 4, f"P{i}")
     top = store.top10()
-    assert len(top) == 10, len(top)
+    assert len(top) == TOP_N, len(top)
     assert [entry["score"] for entry in top] == sorted(
         (entry["score"] for entry in top), reverse=True
     ), top
     assert top[0]["score"] == 1100, top  # i=11 -> 1100, a maior
-    print("OK 3: top10 ordenado por pontuação decrescente, limitado a 10")
+    # Guarda o corte, não só a ordem: com 12 submetidas e TOP_N=5, o último
+    # do quadro tem de ser a 5.ª melhor (700), não a 12.ª a entrar.
+    assert top[-1]["score"] == 700, top
+    print(f"OK 3: quadro ordenado por pontuação decrescente, limitado a {TOP_N}")
 
 
 # ---------------------------------------------------------------------------

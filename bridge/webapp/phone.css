@@ -533,7 +533,32 @@ html, body {
 }
 .namekey[disabled] { opacity: 0.5; }
 
-/* ---------- Fim de partida: top10 do dia (ecrã final, sem volta) ---------- */
+/* ---------- Fim de partida: top 5 do dia (ecrã final, sem volta) ---------- */
+
+/* Este é o ecrã em que a pessoa fica, e o que ela fotografa. Hugo em cima, a
+   marca do evento em baixo, os cinco no meio. São cinco e não dez
+   precisamente para caberem os três sem nada rolar. */
+.top10-logo-hugo {
+  width: 60vw;
+  max-width: 300px;
+  height: auto;
+  margin-bottom: 2vh;
+}
+/* `.lcd-standalone` traz 14vh de margem de topo, que serve nos ecrãs em que o
+   LCD é a primeira coisa. Aqui tem o logo por cima, e essa margem virava um
+   buraco de 130px entre os dois. */
+#screen-top10 .lcd-standalone { margin-top: 0; }
+.top10-logo-revenge {
+  width: 80vw;
+  max-width: 400px;
+  height: auto;
+  margin-top: auto;   /* empurra-se para o fundo do ecrã */
+  padding-top: 2vh;
+}
+/* A nota desce com a marca, em vez de ficar colada à lista com 193px de nada
+   por baixo (medido). O espaço que sobra fica entre a lista e o rodapé, onde
+   se lê como respiração e não como buraco. */
+#screen-top10 .top10-note { margin-top: auto; }
 
 .top10-list {
   list-style: none;

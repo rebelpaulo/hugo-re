@@ -150,11 +150,19 @@
        bloqueio é deliberado (para jogar de novo é preciso ler o QR outra
        vez e entrar na fila — ver phone.js/onReleased). -->
   <section id="screen-top10" class="screen">
+    <!-- Último ecrã que a pessoa vê, e por isso o que fica na fotografia que
+         ela tira: Hugo em cima, os cinco melhores no meio, a marca do evento
+         em baixo. Se um dos logótipos faltar em disco, esconde-se sozinho
+         (ver o onerror) em vez de deixar o ícone de imagem partida. -->
+    <img class="top10-logo-hugo" src="img/hugo.png" alt="Hugo"
+         onerror="this.style.display='none'">
     <div class="lcd lcd-standalone">
-      <div class="lcd-line">TOP 10 DE HOJE</div>
+      <div class="lcd-line">TOP 5 DE HOJE</div>
     </div>
     <ol class="top10-list" id="top10-list"></ol>
     <p class="top10-note">Para voltar a jogar, lê o QR outra vez e entra na fila.</p>
+    <img class="top10-logo-revenge" src="img/revenge.png" alt="Revenge of the 90s"
+         onerror="this.style.display='none'">
   </section>
 
   <!-- 8. Despedida — desligar manual (auscultador enquanto offHook, ver

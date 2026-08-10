@@ -48,6 +48,9 @@ LOGGER = logging.getLogger("bridge.score_store")
 
 DB_GLOB = "scores-*.db"
 MAX_NAME_LEN = 8
+# Quantos entram no quadro de honra. Ver `ScoreStore.top10` para o porquê de
+# ser 5 apesar de tudo à volta se chamar "top10".
+TOP_N = 5
 FALLBACK_NAME = "???"
 SESSION_WINDOW_SECONDS = 24 * 3600
 
@@ -210,8 +213,13 @@ class ScoreStore:
         return {"name": name, "score": score}
 
     def top10(self) -> list[dict]:
+        """Os melhores da sessão. São TOP_N = 5, não 10 (decisão do cliente:
+        no ecrã do telemóvel, cinco linhas deixam espaço para os logótipos e
+        lêem-se de relance). O nome do método, a rota `/top10` e o tipo de
+        mensagem `top10` ficam como estão — são identificadores do protocolo,
+        e trocá-los custaria mais do que vale."""
         rows = self._conn.execute(
-            "SELECT name, score FROM scores ORDER BY score DESC, ts ASC LIMIT 10"
+            "SELECT name, score FROM scores ORDER BY score DESC, ts ASC LIMIT ?", (TOP_N,)
         ).fetchall()
         return [{"name": name, "score": score} for name, score in rows]
 
