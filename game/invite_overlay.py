@@ -25,6 +25,7 @@ jogar ao lado nem prejudicar a leitura do código.
 """
 import math
 import os
+import time
 
 import pygame
 import pygame.freetype
@@ -33,6 +34,11 @@ QUAD_W, QUAD_H = 320, 240
 
 QR_PATH = "resources/images/qr_lobby.png"
 QR_SIZE = 150  # pedido: pelo menos ~140px no quadrante 320x240
+
+# De quanto em quanto tempo se vai ver se o ficheiro do QR mudou em disco.
+# Um `stat` por segundo não custa nada; ler a imagem por frame, em quatro
+# quadrantes, custaria.
+QR_RECHECK_SECONDS = 1.0
 
 # Placa por trás do texto. Não é fundo de quadrante: o vídeo de attract corre
 # por trás e tem de continuar a ver-se (ver `_plate`). Mais opaca do que o
@@ -49,7 +55,8 @@ _title_font = None
 _sub_font = None
 _queue_font = None
 _qr_image = None
-_qr_loaded = False
+_qr_signature = None    # (mtime, tamanho) do ficheiro que está carregado
+_qr_next_check = 0.0
 
 
 def _load_fonts():
@@ -63,19 +70,47 @@ def _load_fonts():
     _queue_font = pygame.freetype.SysFont("Arial", 15, bold=True)
 
 
-def _load_qr():
-    """Carrega o QR uma única vez. Devolve None se o ficheiro ainda não
-    existir (outro worker está a gerá-lo) — sem rebentar."""
-    global _qr_image, _qr_loaded
-    if _qr_loaded:
+def _load_qr(now=None):
+    """Devolve o QR actual, relendo-o do disco sempre que o ficheiro mudar.
+
+    Isto tem de reler, e não pode carregar uma vez só. Quem escreve o
+    ficheiro é o bridge, e o supervisor arranca o jogo PRIMEIRO
+    (`scripts/macos/supervisor.sh`): quando o jogo desenha o primeiro
+    quadrante, o QR que está em disco ainda é o da sessão anterior. Com o
+    túnel, o bridge só o reescreve uns 30 segundos depois — o tempo de
+    levantar o túnel e de o endereço propagar (ver `bridge/tunnel.py`). Uma
+    leitura única fixava o QR da noite anterior, de um túnel já morto, e
+    mostrava-o a noite inteira; e se o ficheiro não existisse de todo, fixava
+    a ausência e nunca mais mostrava QR nenhum.
+
+    Ficheiro ausente ou ilegível devolve None sem rebentar — o convite
+    continua a ler-se sem ele, e assim que aparecer é apanhado."""
+    global _qr_image, _qr_signature, _qr_next_check
+    now = time.monotonic() if now is None else now
+    if now < _qr_next_check:
         return _qr_image
-    _qr_loaded = True
-    if os.path.isfile(QR_PATH):
-        try:
-            img = pygame.image.load(QR_PATH).convert_alpha()
-            _qr_image = pygame.transform.smoothscale(img, (QR_SIZE, QR_SIZE))
-        except pygame.error:
-            _qr_image = None
+    _qr_next_check = now + QR_RECHECK_SECONDS
+
+    try:
+        estado = os.stat(QR_PATH)
+        assinatura = (estado.st_mtime_ns, estado.st_size)
+    except OSError:
+        _qr_image = None
+        _qr_signature = None
+        return None
+
+    if assinatura == _qr_signature:
+        return _qr_image
+
+    try:
+        img = pygame.image.load(QR_PATH).convert_alpha()
+        _qr_image = pygame.transform.smoothscale(img, (QR_SIZE, QR_SIZE))
+        _qr_signature = assinatura
+    except pygame.error:
+        # A meio de uma escrita do bridge o ficheiro pode estar truncado.
+        # Não se guarda assinatura, portanto tenta-se outra vez daqui a 1s.
+        _qr_image = None
+        _qr_signature = None
     return _qr_image
 
 

@@ -118,6 +118,16 @@ async def run(config_path: Path) -> None:
     # falta, rede em baixo) cai-se no endereço da rede local, que é o que
     # havia antes; o servidor escuta em 0.0.0.0, portanto esse caminho
     # funciona sempre, com ou sem túnel.
+    # Apaga o QR da sessão anterior ANTES de levantar o túnel. Enquanto o
+    # endereço novo não existe, o ficheiro em disco aponta para o túnel da
+    # última vez, que já morreu — e o jogo, que arranca antes do bridge
+    # (`scripts/macos/supervisor.sh`), mostrava-o no ecrã grande durante esses
+    # ~30 segundos. Sem ficheiro, o convite aparece sem QR (o overlay aguenta
+    # isso) e apanha o novo assim que ele for escrito, porque relê o ficheiro
+    # quando muda (ver `game/invite_overlay.py`). Melhor um convite sem código
+    # do que um código que não leva a lado nenhum.
+    QR_OUTPUT.unlink(missing_ok=True)
+
     ip = lan_ip()
     local_url = f"http://{ip}:{port}/"
     tunnel: QuickTunnel | None = None
