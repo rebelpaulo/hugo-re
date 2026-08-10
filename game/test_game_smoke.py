@@ -165,6 +165,7 @@ def main() -> int:
     QR.unlink(missing_ok=True)  # começa como um arranque de evento: sem QR
 
     audio = RespondedorDeAudio().__enter__()
+    lancado = time.monotonic()
     with registo.open("w") as saida:
         jogo = subprocess.Popen(
             [str(VENV_PY), "-u", "game.py", ASSETS],
@@ -178,12 +179,41 @@ def main() -> int:
         # desenha nada e não diz nada, e uma versão anterior deste teste
         # media aos 7s — dava tudo por bom sobre um jogo que ainda nem tinha
         # pintado o primeiro frame. Espera-se pela marca, não pelo relógio.
-        if not esperar_por_ecra(jogo, registo, limite=90):
-            falhar(jogo, "o jogo não chegou a desenhar em 90s", registo)
+        #
+        # O ecrã de espera tem de estar pintado ANTES desses 27s, não depois.
+        # Durante muito tempo esteve depois: mostrava-se o loading.png de
+        # origem durante todo o carregamento, e o nosso ecrã com os logótipos
+        # só teria a sua vez a seguir — altura em que o QR já existe e ele
+        # nunca chega a aparecer. Nenhum teste via isto, porque todos
+        # começavam a olhar a partir do ciclo de render.
+        if not esperar_por_ecra(jogo, registo, limite=45):
+            falhar(jogo, "o jogo não pintou nada em 45s", registo)
+        ao_fim_de = time.monotonic() - lancado
         estado = ecra_actual(registo)
-        if estado != "espera (sem QR)":
-            falhar(jogo, f"sem QR em disco devia estar em espera, está em {estado!r}", registo)
-        print("OK 1: sem QR em disco, o ecrã grande está no ecrã de espera")
+        if estado != "espera (a carregar recursos)":
+            falhar(
+                jogo,
+                f"a primeira coisa pintada devia ser o ecrã de espera, foi {estado!r} "
+                "— o carregamento voltou a passar à frente dele",
+                registo,
+            )
+        # Não chega ser o primeiro: tem de ser CEDO. Medido nesta máquina, o
+        # ecrã de espera aparece a 1,6s e o ciclo de render a 32,8s. Se alguém
+        # empurrar a pintura para depois do carregamento, ela passa a aparecer
+        # perto dos 32s — e continuaria a ser a primeira marca, portanto a
+        # ordem sozinha não apanhava a regressão.
+        if ao_fim_de > 12:
+            falhar(
+                jogo,
+                f"o ecrã de espera só apareceu ao fim de {ao_fim_de:.1f}s — devia estar "
+                "no ecrã em poucos segundos, senão não cobre o carregamento",
+                registo,
+            )
+        print(f"OK 1: ecrã de espera pintado a {ao_fim_de:.1f}s, antes de carregar os recursos")
+
+        if not esperar_por_ecra(jogo, registo, limite=90, esperado="espera (sem QR)"):
+            falhar(jogo, "o jogo não chegou ao ciclo de render em 90s", registo)
+        print("OK 2: sem QR em disco, o ciclo de render fica no ecrã de espera")
 
         # A transição que rebentava com NameError. E, antes disso, a que nem
         # sequer acontecia: com a condição errada o ecrã ficava preso aqui.
@@ -199,7 +229,7 @@ def main() -> int:
                 "— ou ficou preso na espera, ou rebentou a desenhar",
                 registo,
             )
-        print("OK 2: o QR apareceu e o ecrã passou aos convites")
+        print("OK 3: o QR apareceu e o ecrã passou aos convites")
 
         # E o caminho de volta, que acontece quando o bridge reinicia.
         QR.unlink(missing_ok=True)
@@ -209,7 +239,7 @@ def main() -> int:
         estado = ecra_actual(registo)
         if estado != "espera (sem QR)":
             falhar(jogo, f"QR desapareceu; devia voltar à espera, está em {estado!r}", registo)
-        print("OK 3: o QR desapareceu e o ecrã voltou à espera (reinício do bridge)")
+        print("OK 4: o QR desapareceu e o ecrã voltou à espera (reinício do bridge)")
     finally:
         if vivo(jogo):
             jogo.terminate()
@@ -223,7 +253,7 @@ def main() -> int:
     texto = registo.read_text(errors="replace")
     for marca in ("Traceback", "NameError", "AttributeError"):
         assert marca not in texto, f"{marca} no log do jogo:\n{texto[-1500:]}"
-    print("OK 4: nenhum traceback no log")
+    print("OK 5: nenhum traceback no log")
     print("Todos os cenários passaram.")
     return 0
 

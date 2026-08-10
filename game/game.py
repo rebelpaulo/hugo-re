@@ -96,10 +96,32 @@ class Game:
         render_object = ctx.vertex_array(program, [(quad_buffer, '2f 2f', 'vert', 'texcoord')])
         self.post_processing = PostProcessing()
 
-        loading = pygame.image.load("resources/images/loading.png").convert_alpha()
-        display.blit(loading, (0, 0))
-        global_state.frame_time = time.time()
-        self.render_frame(ctx, display, program, render_object, False)
+        # Estes ~27s a carregar recursos são a primeira coisa que se vê num
+        # evento, e até aqui mostravam o loading.png de origem. Mostra-se o
+        # nosso ecrã de espera, o MESMO que o ciclo de render usa enquanto não
+        # há QR — assim a passagem de um para o outro não se nota.
+        #
+        # Repinta-se entre cada bloco de carregamento por duas razões: os três
+        # pontos andam, portanto não parece pendurado, e o `event.pump()` diz
+        # ao macOS que a janela está viva. Sem ele o sistema escurece-a e
+        # oferece-se para a matar, a meio do arranque, à frente de toda a gente.
+        arranque_ecra = time.time()
+        primeira_espera = True
+
+        def pintar_espera():
+            nonlocal primeira_espera
+            invite_overlay.draw_loading(display, time.time() - arranque_ecra)
+            global_state.frame_time = time.time()
+            self.render_frame(ctx, display, program, render_object, False)
+            pygame.event.pump()
+            if primeira_espera:
+                primeira_espera = False
+                # Dito uma vez, para o teste de fumo poder exigir que o ecrã de
+                # espera apareça ANTES do carregamento e não depois dele — que
+                # é o defeito que isto veio corrigir, e que nenhum teste via.
+                print("[ecrã] a mostrar: espera (a carregar recursos)", flush=True)
+
+        pintar_espera()
 
         pygame.mouse.set_visible(False)
         # Instante até ao qual o cursor e o botão de ecrã inteiro ficam à
@@ -120,10 +142,15 @@ class Game:
         screens = [pygame.Surface((320, 240)) for _ in range(4)]
 
         CaveResources.init()
+        pintar_espera()
         ForestResources.init()
+        pintar_espera()
         ScoreboardResources.init()
+        pintar_espera()
         TvShowResources.init()
+        pintar_espera()
         Splat.init()
+        pintar_espera()
 
         # O áudio é separado por jogador para chegar ao respetivo telemóvel
         # (webapp) ou auscultador (SIP), cada um através da sua própria porta.
