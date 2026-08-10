@@ -165,6 +165,12 @@ class QuickTunnel:
                 "PID %d já não é o nosso cloudflared (é %r) — deixado em paz", pid, agora[:60]
             )
             return 0
+        # Isto é o melhor que se consegue, não uma prova: o `lstart` só tem
+        # precisão ao segundo, e entre o `ps` acima e o sinal aqui em baixo há
+        # uma janela. Para dar errado o nosso cloudflared teria de morrer nessa
+        # janela E o sistema dar o mesmo PID a outro cloudflared para a mesma
+        # porta dentro do mesmo segundo. Em macOS não há identidade de processo
+        # que não se repita, portanto fica assim de propósito.
         try:
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
