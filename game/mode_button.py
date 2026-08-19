@@ -1,4 +1,4 @@
-"""Botão de modo de entrada no canto do ecrã, ao lado do de ecrã inteiro.
+"""Botão de modo de entrada no canto superior esquerdo do ecrã.
 
 Para que serve: a sala pode estar montada com os telemóveis dos convidados
 (QR + webapp) ou com os telefones físicos, e até agora trocar entre os dois
@@ -14,8 +14,8 @@ perdeu, o botão fica com ar de "à espera" durante uns segundos depois de um
 pedido; se a confirmação não chegar, volta ao que estava.
 
 Só é desenhado enquanto o rato esteve a mexer há pouco, tal como o botão de
-ecrã inteiro — num LED wall, dois botões parados no canto durante três horas
-são ruído.
+ecrã inteiro (que fica no canto oposto) — num LED wall, botões parados nos
+cantos durante três horas são ruído.
 """
 import json
 import os
@@ -29,14 +29,12 @@ import fullscreen_button
 
 _ALTURA = 22
 _LARGURA = 96
-_ESPACO = 4
 
-RECT = pygame.Rect(
-    fullscreen_button.RECT.x - _ESPACO - _LARGURA,
-    fullscreen_button.RECT.y,
-    _LARGURA,
-    _ALTURA,
-)
+# Canto superior ESQUERDO. Começou colado ao botão de ecrã inteiro, à direita,
+# e em ecrã inteiro no LED wall ficava escondido: o canto direito é onde o
+# macOS e o resto do ambiente de trabalho põem as suas próprias coisas por
+# cima, e o rótulo aparecia cortado a meio. À esquerda está sozinho.
+RECT = pygame.Rect(fullscreen_button.RECT.y, fullscreen_button.RECT.y, _LARGURA, _ALTURA)
 
 # Mesma disciplina do `game/score_report.py`: loopback, porta por omissão
 # igual à de `bridge/config.yaml: control.port`, substituível pelo ambiente
