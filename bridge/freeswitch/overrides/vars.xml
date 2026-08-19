@@ -451,4 +451,11 @@
        Works independently of disable_q850_reason for selective 603+ forwarding. -->
   <!--<Z-PRE-PROCESS cmd="set" data="sip_603plus_passthrough=true"/>-->
 
+  <!-- Gerado pelo build-conf.sh a cada arranque: o IP do Mac na rede onde
+       estão os telefones. Não pode ser fixo no ficheiro — com a Partilha de
+       Internet do macOS o número muda (192.168.2.1, 192.168.3.1...) conforme
+       o humor do sistema, e um IP errado aqui é o FreeSWITCH a atender num
+       sítio onde ninguém liga, descoberto no dia. -->
+  <X-PRE-PROCESS cmd="include" data="vars-lan.xml"/>
+
 </include>

@@ -58,11 +58,38 @@
          dois lados sem precisar de escolher. Se em teste com telefone real
          os dígitos não chegarem, o primeiro sítio a olhar é o dtmf.type
          configurado no telefone, não este ficheiro. -->
-    <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
-    <param name="outbound-codec-prefs" value="$${global_codec_prefs}"/>
-    <param name="rtp-timer-name" value="soft"/>
-    <param name="rtp-ip" value="$${local_ip_v4}"/>
-    <param name="sip-ip" value="$${local_ip_v4}"/>
+    <!-- ALTERADO: banda estreita à força, em vez do $${global_codec_prefs} de
+         origem (que deixava o telefone escolher G722, e escolhia).
+
+         Porquê: o DTMF viaja em RFC2833, dentro do próprio fluxo de áudio.
+         Medido nesta montagem — bridge a 20-60ms, rede ao telefone a 0,6-2,2ms
+         sem perdas, e teclas injectadas directamente no jogo a aparecerem no
+         ecrã instantaneamente — sobrou um único troço para os ~5s de atraso
+         que se viam: entre o dedo e o FreeSWITCH ver o dígito. E o que lá se
+         via era silêncio seguido de rajada (nove eventos em 430ms), que é a
+         assinatura de áudio entregue em blocos, não de rede lenta.
+
+         G722 a 16 kHz com RFC2833 é um par com má fama neste ponto. PCMU/PCMA
+         a 8 kHz é o caminho mais batido que existe em telefonia. Para este uso
+         não se perde nada que importe: o que passa no auscultador é voz de
+         jogo, não música de alta fidelidade. -->
+    <param name="inbound-codec-prefs" value="PCMU,PCMA"/>
+    <param name="outbound-codec-prefs" value="PCMU,PCMA"/>
+    <!-- ALTERADO: era "soft". Com o temporizador por software, o FreeSWITCH
+         marca o passo do áudio com um relógio próprio e trata o RTP a esse
+         ritmo — e o DTMF do telefone viaja DENTRO do RTP, portanto herda o
+         atraso do que estiver a atrasar esse tratamento.
+
+         O que empurrou para aqui foi uma medição contra-intuitiva: pôr áudio
+         contínuo a correr na chamada, à espera de melhorar, piorou o atraso
+         para o pior valor de toda a tarde. Mais trabalho no mesmo caminho de
+         media = mais atraso nas teclas. Isso não é rede — é uma fila a
+         encher. "none" tira o relógio do meio: o áudio passa a ser tratado
+         quando os pacotes chegam, que é o que se quer numa chamada
+         estacionada sem mistura em tempo real. -->
+    <param name="rtp-timer-name" value="none"/>
+    <param name="rtp-ip" value="$${hugo_lan_ip}"/>
+    <param name="sip-ip" value="$${hugo_lan_ip}"/>
     <param name="hold-music" value="$${hold_music}"/>
     <param name="apply-nat-acl" value="nat.auto"/>
     <!-- ALTERADO: era "domains" (só permite IPs com cidr= num utilizador do
