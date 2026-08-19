@@ -159,6 +159,33 @@ class WebBridge:
         # `release_player`/`_release_active` em slot_manager.py).
         self._finished_players: dict[str, int] = {}
 
+    async def set_input_mode(self, mode: str) -> None:
+        """Muda o modo de entrada e avisa quem já está ligado.
+
+        Sem o aviso, um telemóvel com o teclado aberto no momento em que a
+        produção passa para os telefones ficava a carregar em teclas que já
+        não contam, sem nada no ecrã a explicar porquê. A webapp já sabe
+        reagir a `config` — é a mesma mensagem que recebe ao ligar-se.
+        """
+        if mode not in VALID_INPUT_MODES or mode == self.input_mode:
+            return
+        self.input_mode = mode
+        for source_id, ws in list(self._sockets.items()):
+            if ws.closed:
+                continue
+            try:
+                await ws.send_json({"type": "config", "input_mode": mode})
+            except Exception:
+                # Apanha-se tudo, e de propósito: só `ConnectionResetError`
+                # não chegava (um `send_json` num transporte a fechar levanta
+                # `RuntimeError`, por exemplo), e uma excepção que subisse
+                # daqui abortava a troca de modo a meio. Um telemóvel que não
+                # recebe o aviso é um telemóvel; o evento inteiro preso no
+                # modo errado é outra coisa.
+                LOGGER.debug(
+                    "Sessão %s não recebeu o aviso de modo", source_id, exc_info=True
+                )
+
     async def route(self, decisions: list[Decision]) -> None:
         """Encaminha cada Decision para a sessão certa.
 
@@ -235,6 +262,17 @@ class WebBridge:
             if ws is not None and not ws.closed:
                 await ws.send_json({"type": "pong"})
         elif mtype == "hello":
+            if self.input_mode == "sip":
+                # Num evento de telefones a webapp não ocupa quadrantes. A
+                # webapp honesta fecha a ligação sozinha ao receber o `config`,
+                # mas quem já tivesse a página aberta quando o modo mudou — e
+                # agora há mais gente nessa situação, porque o QR esteve no
+                # ecrã — entrava na mesma e roubava um lugar a um telefone.
+                LOGGER.info("Sessão %s pediu lugar em modo sip — recusado", source_id)
+                ws = self._sockets.get(source_id)
+                if ws is not None and not ws.closed:
+                    await ws.send_json({"type": "config", "input_mode": self.input_mode})
+                return
             await self.route(self.manager.connect(source_id, "web"))
         elif mtype == "press":
             event = KEY_TO_EVENT.get(str(data.get("key")))
@@ -564,6 +602,10 @@ def create_app(
         score_store=score_store,
     )
     app = web.Application()
+    # Guardado para quem precise de mexer no modo com o bridge a andar
+    # (bridge/main.py, canal de controlo) — o `route` devolvido é um método
+    # ligado e chegar ao objecto por ele seria adivinhar.
+    app["web_bridge"] = bridge
 
     if score_store is not None:
         app["score_store"] = score_store

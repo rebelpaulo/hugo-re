@@ -154,9 +154,18 @@ class SipAdapter:
             backoff = min(backoff * 2, self.backoff_max)
 
     async def stop(self) -> None:
-        """Pára `run()` de forma limpa — chamado no desligar do bridge."""
+        """Pára `run()` de forma limpa — chamado no desligar do bridge.
+
+        Antes de largar o ESL, desliga as chamadas em curso. Sem isto os
+        telefones ficavam fora do gancho e mudos: quem estivesse ao telefone
+        quando a produção passa para os telemóveis não ouvia nada e não tinha
+        forma de perceber que a chamada já não conta. Com o `hupall` o
+        auscultador ganha o tom de ocupado, que toda a gente sabe ler.
+        """
         self._stop_event.set()
         if self._writer is not None:
+            with contextlib.suppress(Exception):
+                await _send(self._writer, "api hupall normal_clearing")
             self._writer.close()
             with contextlib.suppress(Exception):
                 await self._writer.wait_closed()
@@ -283,6 +292,12 @@ class SipAdapter:
         # com o resto do adaptador.
         decisions += self.manager.request_slot(source_id)
         decisions += self.manager.handle_event(source_id, "offhook")
+        LOGGER.info(
+            "Telefone entrou: destino=%r id=%s -> lugar %s",
+            destination,
+            source_id,
+            self.manager.player_for(source_id),
+        )
         await self.route(decisions)
 
     async def _on_dtmf(self, uuid: str, digit: str | None) -> None:
@@ -293,13 +308,43 @@ class SipAdapter:
         if game_event is None:
             LOGGER.debug("DTMF desconhecido %r na chamada %s", digit, uuid)
             return
-        await self.route(self.manager.handle_event(call.source_id, game_event))
+        decisions = self.manager.handle_event(call.source_id, game_event)
+        # Ao nível normal, e de propósito: o registo do FreeSWITCH já carimba
+        # a hora em que recebeu o dígito ("RECV DTMF"), e no mesmo ficheiro.
+        # Com esta linha ao lado, a distância entre as duas mede exactamente
+        # quanto tempo a tecla passou cá dentro — que é a pergunta que
+        # apareceu em palco ("carrego e demora seis segundos") e que sem isto
+        # não tinha resposta possível.
+        LOGGER.info(
+            "Tecla %r de %s -> jogador %s (%d decisões)",
+            digit,
+            call.source_id,
+            self.manager.player_for(call.source_id),
+            len(decisions),
+        )
+        if not decisions:
+            # A tecla chegou ao bridge e não deu em nada. É EXACTAMENTE o
+            # sintoma que se ouve em palco — "carrego e não acontece nada" — e
+            # até aqui não deixava rasto nenhum: nem o FreeSWITCH (que a
+            # recebeu bem) nem o jogo (que nunca a viu) tinham como o dizer.
+            # As duas razões prováveis estão ambas aqui: o telefone perdeu o
+            # lugar (inactividade), ou a tecla caiu na janela anti-duplicados
+            # por o aparelho a mandar duas vezes (RFC2833 + SIP INFO).
+            LOGGER.warning(
+                "Tecla %r do telefone %s não deu em nada (lugar=%s) — sem lugar, ou apanhada como duplicado",
+                digit,
+                call.source_id,
+                self.manager.player_for(call.source_id),
+            )
+            return
+        await self.route(decisions)
 
     async def _end_call(self, uuid: str) -> None:
         call = self._calls.pop(uuid, None)
         if call is None:
             return
         self._active_source_ids.discard(call.source_id)
+        LOGGER.info("Telefone desligou: id=%s", call.source_id)
         decisions = self.manager.handle_event(call.source_id, "hungup")
         decisions += self.manager.disconnect(call.source_id)
         await self.route(decisions)

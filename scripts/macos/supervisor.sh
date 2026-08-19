@@ -97,9 +97,21 @@ POLL_INTERVAL=0.2
 # tem `local -n`/namerefs) — três variáveis escalares chegam como fila FIFO.
 GAME_D1=0; GAME_D2=0; GAME_D3=0
 BRIDGE_D1=0; BRIDGE_D2=0; BRIDGE_D3=0
+SIP_D1=0; SIP_D2=0; SIP_D3=0
+# Enquanto isto for 1, um FreeSWITCH em baixo volta a ser tentado. A primeira
+# versão limpava o SIP_PID quando o arranque falhava e a vigia, que só olhava
+# para PIDs não vazios, nunca mais lhe tocava: uma falha passageira no
+# PRIMEIRO arranque desligava os telefones para o resto da noite, com o
+# contador de mortes por gastar.
+SIP_ACTIVO=1
+SIP_ULTIMA_TENTATIVA=0
+# Espaço mínimo entre tentativas. Sem ele, a vigia (que corre a cada 0,2s)
+# gastava as três mortes permitidas em menos de um segundo.
+SIP_INTERVALO=10
 
 GAME_PID=""
 BRIDGE_PID=""
+SIP_PID=""
 AUDIO_WRAPPER_PID=""
 AUDIO_SERVER_PID=""
 STOPPING=0
@@ -153,23 +165,62 @@ start_bridge() {
   log "[ok] bridge arrancado (PID $BRIDGE_PID)."
 }
 
+# O FreeSWITCH passa a arrancar SEMPRE, mesmo quando o evento começa em modo
+# telemóveis. A razão é o botão de modo no ecrã grande (ver game/mode_button.py):
+# se o FreeSWITCH só subisse quando alguém escolhesse "telefones", o botão
+# ficava a prometer uma coisa que demorava meio minuto a existir — ou que não
+# existia de todo se o binário faltasse. A escutar sem ninguém a ligar não faz
+# mal nenhum; só segura a porta 5060.
+#
+# REGRA, a mesma do túnel em bridge/tunnel.py: isto NUNCA pode impedir o evento
+# de arrancar. Sem FreeSWITCH instalado, ou se ele não subir, fica registado e
+# segue-se — o modo telemóveis, que é o normal, não depende disto para nada.
+FS_CLI="$(command -v fs_cli 2>/dev/null || true)"
+[[ -n "$FS_CLI" ]] || FS_CLI="/opt/homebrew/bin/fs_cli"
+
+start_sip() {
+  log "== a arrancar o FreeSWITCH (telefones) =="
+  SIP_ULTIMA_TENTATIVA="$(date +%s)"
+  "$SCRIPT_DIR/run-sip.sh" >>"$LOG_FILE" 2>&1 &
+  SIP_PID=$!
+  # Pergunta-se ao próprio FreeSWITCH em vez de procurar uma frase no log.
+  # A primeira versão fazia `grep "== FreeSWITCH pronto ==" "$LOG_FILE"`, e o
+  # log é PARTILHADO e cresce: num reinício, a linha do arranque anterior
+  # ainda lá estava e o grep acertava logo na primeira volta — dávamos por
+  # pronto um FreeSWITCH que o run-sip.sh novo ainda nem tinha arrancado.
+  # Mentira do supervisor exactamente quando ele existe para não mentir.
+  for _ in $(seq 1 60); do
+    if ! kill -0 "$SIP_PID" 2>/dev/null; then
+      SIP_PID=""
+      log "[aviso] o FreeSWITCH não arrancou (ver $LOG_FILE); volto a tentar dentro de ${SIP_INTERVALO}s."
+      return 0
+    fi
+    if [[ -x "$FS_CLI" ]] && "$FS_CLI" -x "status" 2>/dev/null | grep -q "FreeSWITCH.*ready"; then
+      log "[ok] FreeSWITCH pronto (PID $SIP_PID)."
+      return 0
+    fi
+    sleep 0.5
+  done
+  log "[aviso] o FreeSWITCH demorou de mais a ficar pronto; deixa-se a arrancar em segundo plano."
+}
+
 # Manda SIGTERM e espera até 5s; escala para SIGKILL se não for suficiente.
 # Medido: o jogo (pygame) por vezes demora vários segundos a reagir a um
 # SIGTERM simples (sem handler próprio, mas o loop só verifica sinais
 # pendentes entre frames) — não é fiável esperar que morra logo a seguir.
 matar_com_escalada() {
-  local pid="$1" nome="$2"
+  local pid="$1" nome="$2" espera="${3:-5}"
   kill -0 "$pid" 2>/dev/null || return 0
   kill "$pid" 2>/dev/null || true
-  for _ in $(seq 1 17); do
+  for _ in $(seq 1 $(( espera * 2 ))); do
     if ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid" 2>/dev/null || true
       log "[ok] $nome parou."
       return 0
     fi
-    sleep 0.3
+    sleep 0.5
   done
-  log "[aviso] $nome não reagiu a SIGTERM em 5s; a forçar com SIGKILL."
+  log "[aviso] $nome não reagiu a SIGTERM em ${espera}s; a forçar com SIGKILL."
   kill -9 "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   if kill -0 "$pid" 2>/dev/null; then
@@ -185,6 +236,13 @@ parar_tudo() {
   log "== a parar tudo =="
   [[ -n "$GAME_PID" ]] && matar_com_escalada "$GAME_PID" "o jogo"
   [[ -n "$BRIDGE_PID" ]] && matar_com_escalada "$BRIDGE_PID" "o bridge"
+  # O run-sip.sh tem trap própria: ao receber o sinal desliga o FreeSWITCH
+  # antes de sair, portanto basta matar o lançador. Mas o shutdown limpo do
+  # FreeSWITCH pode levar 10s, e os 5s por omissão davam SIGKILL ao lançador
+  # antes disso — e SIGKILL não corre trap nenhuma, portanto o FreeSWITCH
+  # ficava vivo a segurar a 5060 depois de o evento acabar. Medido: num
+  # encerramento real a escalada disparou com o shutdown já a 100%, à tangente.
+  [[ -n "$SIP_PID" ]] && matar_com_escalada "$SIP_PID" "o FreeSWITCH" 15
   stop_audio_pa
   log "== supervisor parado. Log completo em: $LOG_FILE =="
 }
@@ -216,6 +274,7 @@ log "   assets: $ASSETS"
 log "   limite: $MAX_DEATHS mortes em ${WINDOW_SECONDS}s por processo, depois desiste"
 
 [[ "$AUDIO_PA" -eq 1 ]] && start_audio_pa
+start_sip
 start_game
 start_bridge
 
@@ -249,6 +308,22 @@ while true; do
       log "[FALHA] A DESISTIR — não vou reiniciar para sempre. Vê o log e resolve à mão: $LOG_FILE"
       parar_tudo
       exit 1
+    fi
+  fi
+
+  # O FreeSWITCH reinicia-se, mas nunca derruba o evento: esgotado o limite
+  # ficam só os telemóveis, que é o modo normal.
+  if [[ "$SIP_ACTIVO" -eq 1 ]] && { [[ -z "$SIP_PID" ]] || ! kill -0 "$SIP_PID" 2>/dev/null; }; then
+    if (( AGORA - SIP_ULTIMA_TENTATIVA >= SIP_INTERVALO )); then
+      [[ -n "$SIP_PID" ]] && log "[aviso] o FreeSWITCH morreu (PID $SIP_PID)."
+      SIP_PID=""
+      if registar_morte SIP "$AGORA"; then
+        start_sip
+      else
+        SIP_ACTIVO=0
+        log "[aviso] o FreeSWITCH morreu $MAX_DEATHS vezes em menos de ${WINDOW_SECONDS}s — desisto dele."
+        log "[aviso] O evento continua em modo telemóveis; o botão de TELEFONES deixa de funcionar."
+      fi
     fi
   fi
 

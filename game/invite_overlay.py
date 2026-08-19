@@ -18,7 +18,7 @@ gerado), tal como o resto do jogo se aguenta sem sprites do scoreboard:
 mostra o convite na mesma, sem QR.
 
 Enquanto o QR não existe há um ecrã de espera por cima de tudo (`draw_loading`)
-— o cartaz do jogo e "JÁ A SEGUIR". É o arranque do bridge a levantar o túnel,
+— o cartaz do jogo e "A CARREGAR...". É o arranque do bridge a levantar o túnel,
 uns 30 segundos (ver bridge/tunnel.py). Sem isto via-se o convite completo mas
 sem código, o que parece avariado e põe gente a apontar o telemóvel a um
 quadrado que não está lá.
@@ -187,7 +187,7 @@ def draw_loading(display, elapsed):
     if logo is not None:
         display.blit(logo, logo.get_rect(center=(largura // 2, 130)))
 
-    texto = "JÁ A SEGUIR"
+    texto = "A CARREGAR..."
     rect = _loading_font.get_rect(texto)
     y = 232
     _loading_font.render_to(display, ((largura - rect.width) // 2, y), texto, _TITLE_COLOR)

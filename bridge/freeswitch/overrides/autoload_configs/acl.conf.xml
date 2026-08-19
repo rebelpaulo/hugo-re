@@ -1,0 +1,41 @@
+<configuration name="acl.conf" description="Network Lists">
+  <network-lists>
+    <!--
+        NOSSO. A ACL de origem só tem "lan" e "domains"; ficam como estavam
+        (o perfil external e o directory ainda lhes podem tocar) e
+        acrescenta-se a nossa por baixo.
+
+        Porque foi preciso: o perfil internal usava "localnet.auto", que o
+        FreeSWITCH calcula sozinho a partir da sub-rede do IP a que se ligou
+        — 192.168.68.0/24, a do Wi-Fi. Com a Partilha de Internet do macOS
+        ligada, os telefones NÃO estão nessa sub-rede: o Mac serve-lhes uma
+        rede própria (192.168.3.x, e o número muda conforme o humor do
+        macOS) e encaminha entre as duas. O telefone marcava, o FreeSWITCH
+        via um IP fora da "sua" LAN e respondia 403 Forbidden — que é
+        exactamente o que apareceu no visor do Yealink: "Call failed!
+        Forbidden".
+
+        "A LAN local" deixou de ser uma sub-rede só, portanto a fronteira
+        passa a ser o espaço privado inteiro. Não é um buraco: o FreeSWITCH
+        só escuta nos endereços das interfaces do próprio Mac, e num evento
+        a rede é fechada. Endereços públicos continuam a levar com a porta
+        na cara, que é a parte que interessa.
+    -->
+    <list name="lan" default="allow">
+      <node type="deny" cidr="192.168.42.0/24"/>
+      <node type="allow" cidr="192.168.42.42/32"/>
+    </list>
+
+    <list name="domains" default="deny">
+      <node type="allow" domain="$${domain}"/>
+    </list>
+
+    <list name="hugo-lan" default="deny">
+      <node type="allow" cidr="192.168.0.0/16"/>
+      <node type="allow" cidr="10.0.0.0/8"/>
+      <node type="allow" cidr="172.16.0.0/12"/>
+      <node type="allow" cidr="127.0.0.1/32"/>
+    </list>
+
+  </network-lists>
+</configuration>

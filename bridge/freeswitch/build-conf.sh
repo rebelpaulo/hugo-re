@@ -65,4 +65,24 @@ for item in "$OVERRIDES"/*.xml; do
   ln -sf "$item" "$CONF_DIR/$(basename "$item")"
 done
 
+# 4) vars-lan.xml — gerado, não versionado: o IP do Mac na rede dos telefones.
+#
+# Porquê descobrir isto a cada arranque em vez de o escrever num ficheiro: com
+# a Partilha de Internet do macOS ligada, os telefones ficam numa rede servida
+# pelo próprio Mac (bridge100) e o endereço muda entre 192.168.2.1 e
+# 192.168.3.1 conforme o sistema decide. O FreeSWITCH tem de atender NESSE
+# endereço — foi medido que atender no IP do Wi-Fi, com o áudio a atravessar a
+# tradução de endereços, atrasava as teclas dos telefones em segundos.
+#
+# Sem partilha ligada não há bridge100 nenhum: cai-se no que o FreeSWITCH já
+# calculava sozinho, que é o comportamento de antes.
+LAN_IP="$(ifconfig 2>/dev/null | awk '/^bridge1[0-9][0-9]:/{b=1} b && /inet /{print $2; exit}')"
+if [[ -n "$LAN_IP" ]]; then
+  printf '<X-PRE-PROCESS cmd="set" data="hugo_lan_ip=%s"/>\n' "$LAN_IP" > "$CONF_DIR/vars-lan.xml"
+  echo "[OK] telefones atendidos em $LAN_IP (rede da Partilha de Internet)"
+else
+  printf '<X-PRE-PROCESS cmd="set" data="hugo_lan_ip=$${local_ip_v4}"/>\n' > "$CONF_DIR/vars-lan.xml"
+  echo "[OK] sem Partilha de Internet — telefones atendidos no IP principal"
+fi
+
 echo "[OK] bridge/freeswitch/conf/ construído a partir de $BASE"

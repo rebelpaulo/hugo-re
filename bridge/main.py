@@ -21,7 +21,10 @@ import yaml
 from aiohttp import web
 
 from adapters.sip_adapter import SipAdapter
-from adapters.web_adapter import create_app, load_input_mode
+from adapters.web_adapter import VALID_INPUT_MODES, create_app, load_input_mode
+from control import DEFAULT_HOST as CONTROL_HOST
+from control import DEFAULT_PORT as CONTROL_PORT
+from control import start_control_listener
 from emitter import UdpEmitter
 from qr import generate_qr
 from tunnel import QuickTunnel
@@ -48,6 +51,15 @@ class _ModeStampedEmitter(UdpEmitter):
 
     def __init__(self, *args, mode: str, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self._mode = mode
+
+    def set_mode(self, mode: str) -> None:
+        """Muda o modo carimbado a partir da próxima mensagem.
+
+        Existe porque o modo deixou de ser decidido só no arranque: o
+        operador troca-o no ecrã grande com o evento a decorrer (ver
+        `bridge/control.py`).
+        """
         self._mode = mode
 
     def _send(self, payload):
@@ -107,6 +119,7 @@ async def run(config_path: Path) -> None:
     app, route = create_app(
         manager, audio_config=audio_config, input_mode=input_mode, score_config=score_config
     )
+    web_bridge = app["web_bridge"]
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)
@@ -191,29 +204,37 @@ async def run(config_path: Path) -> None:
     print(f"  AUDIO:  modo={audio_mode}")
     if score_config:
         print(f"  SCORE:  UDP {score_config.get('host', '127.0.0.1')}:{score_config.get('port', 9110)} · top10 em /top10")
-    if input_mode == "sip":
-        print(
-            f"  SIP:    ESL {sip_config.get('esl_host', '127.0.0.1')}:"
-            f"{sip_config.get('esl_port', 8021)} (contexto {sip_config.get('context', 'hugo-lan')})"
-        )
-        print("          ver scripts/macos/run-sip.sh para arrancar o FreeSWITCH")
+    print(f"  MODO:   {input_mode}  (troca-se no botão do ecrã grande, sem reiniciar)")
+    print(
+        f"  SIP:    ESL {sip_config.get('esl_host', '127.0.0.1')}:"
+        f"{sip_config.get('esl_port', 8021)} (contexto {sip_config.get('context', 'hugo-lan')})"
+    )
     print(banner)
 
     # Em input_mode=sip liga-se também o adaptador SIP — o servidor
     # HTTP/WebSocket acima continua a correr sempre (é o que a webapp
     # legada, se lá alguém cair, precisa para mostrar o aviso), mas quem
     # traz os telefones para o SlotManager é este.
+    # O adaptador SIP passa a poder ligar-se e desligar-se com o bridge a
+    # andar. Antes o modo era decidido uma vez, no arranque, e trocá-lo
+    # obrigava a editar o config.yaml e reiniciar tudo — com o jogo e o túnel
+    # atrás, quase um minuto de ecrã parado. Agora é um botão no ecrã grande
+    # (ver game/mode_button.py e bridge/control.py).
+    modo_actual = input_mode
     sip_adapter: SipAdapter | None = None
     sip_task: asyncio.Task | None = None
-    if input_mode == "sip":
 
-        async def sip_route(decisions: list[Decision]) -> None:
-            # Ainda sem áudio para o auscultador (ver bridge/README.md) —
-            # por agora só regista; o desenho não fecha a porta a
-            # encaminhar isto para lá quando o áudio SIP existir.
-            for decision in decisions:
-                LOGGER.debug("SIP decision: %s", decision)
+    async def sip_route(decisions: list[Decision]) -> None:
+        # Ainda sem áudio para o auscultador (ver bridge/README.md) — por
+        # agora só regista; o desenho não fecha a porta a encaminhar isto
+        # para lá quando o áudio SIP existir.
+        for decision in decisions:
+            LOGGER.debug("SIP decision: %s", decision)
 
+    async def ligar_sip() -> None:
+        nonlocal sip_adapter, sip_task
+        if sip_adapter is not None:
+            return
         sip_adapter = SipAdapter(
             manager,
             sip_route,
@@ -223,6 +244,88 @@ async def run(config_path: Path) -> None:
             context=sip_config.get("context", "hugo-lan"),
         )
         sip_task = asyncio.create_task(sip_adapter.run())
+
+    async def desligar_sip() -> None:
+        nonlocal sip_adapter, sip_task
+        if sip_adapter is None:
+            return
+        adaptador, tarefa = sip_adapter, sip_task
+        sip_adapter = None
+        sip_task = None
+        await adaptador.stop()
+        if tarefa is not None:
+            # `stop()` fecha o writer, mas se o `run()` estiver preso a abrir a
+            # ligação ao ESL ainda não há writer nenhum para fechar — e o
+            # esperar por ele ficava à mercê do TCP desistir sozinho. Com o
+            # FreeSWITCH em loopback isso é imediato; com o ESL a meio do
+            # handshake, não é, e ficava presa a troca de modo E o
+            # encerramento do bridge.
+            try:
+                await asyncio.wait_for(tarefa, timeout=5)
+            except asyncio.TimeoutError:
+                LOGGER.warning("O adaptador SIP não parou em 5s — cancelado.")
+                tarefa.cancel()
+                await asyncio.gather(tarefa, return_exceptions=True)
+            except Exception:
+                LOGGER.debug("O adaptador SIP terminou com erro", exc_info=True)
+
+    # Serializa as trocas de modo. Sem isto, dois pedidos ao mesmo tempo
+    # entrelaçavam-se e deixavam o sistema partido de duas maneiras medidas:
+    # em modo web com o adaptador SIP a correr (telefones e telemóveis ao
+    # mesmo tempo), ou em modo sip sem adaptador nenhum (o botão a dizer
+    # TELEFONES com o ESL morto).
+    troca_de_modo = asyncio.Lock()
+
+    async def mudar_modo(novo: str) -> None:
+        nonlocal modo_actual
+        if novo not in VALID_INPUT_MODES:
+            LOGGER.warning("Pedido de modo inválido (%r) — ignorado", novo)
+            return
+        async with troca_de_modo:
+            # A comparação vive DENTRO do cadeado de propósito: cá fora, dois
+            # pedidos seguidos comparavam-se ambos contra o valor antigo, e o
+            # segundo saía sem fazer nada — o operador pedia web e ficava sip.
+            if novo == modo_actual:
+                return
+            # Quem está a jogar sai. O input com que entrou deixou de contar, e
+            # deixá-lo com um teclado que já não faz nada é pior do que tirá-lo:
+            # pelo menos assim o telemóvel diz-lhe o que se passa.
+            await route(manager.end_match())
+            if novo == "sip":
+                await ligar_sip()
+            else:
+                await desligar_sip()
+            # `modo_actual` só muda depois de os efeitos estarem feitos. Com
+            # ele actualizado no início, uma excepção a meio deixava o bridge a
+            # afirmar o modo novo sem nada disto feito — e o clique seguinte,
+            # a pedir o mesmo alvo, era ignorado pela comparação acima. O botão
+            # ficava morto até alguém reiniciar o bridge.
+            emitter.set_mode(novo)
+            modo_actual = novo
+            await web_bridge.set_input_mode(novo)
+            # O jogo aprende o modo pela mensagem `slots`. Forçar uma agora
+            # evita que o ecrã grande fique até um tick inteiro a anunciar o
+            # modo antigo — e é justamente nesse segundo que alguém está a
+            # olhar para ele à espera de ver se o botão funcionou.
+            emitter.send_slots(manager.occupied, manager.queue_len)
+            print(f"  MODO:   {novo}", flush=True)
+
+    if modo_actual == "sip":
+        await ligar_sip()
+
+    control_config = config.get("control") or {}
+    control_transport = await start_control_listener(
+        mudar_modo,
+        host=control_config.get("host", CONTROL_HOST),
+        port=int(control_config.get("port", CONTROL_PORT)),
+    )
+
+    # Uma mensagem `slots` logo no arranque, antes de haver jogadores. O
+    # SlotManager só emite quando algo muda, portanto num evento que comece em
+    # `sip` e onde ninguém tenha ainda ligado, o jogo nunca ouvia falar do modo
+    # e ficava no que assume por omissão — a mostrar o QR num evento de
+    # telefones (`game/udp_input.py`: sem campo, "web"). Custa um datagrama.
+    emitter.send_slots(manager.occupied, manager.queue_len)
 
     tick_task = asyncio.create_task(periodic_tick(manager, route, stop_event))
     tunnel_task: asyncio.Task | None = None
@@ -243,9 +346,8 @@ async def run(config_path: Path) -> None:
         if tunnel_task is not None:
             tunnel_task.cancel()
             await asyncio.gather(tunnel_task, return_exceptions=True)
-        if sip_adapter is not None and sip_task is not None:
-            await sip_adapter.stop()
-            await asyncio.gather(sip_task, return_exceptions=True)
+        control_transport.close()
+        await desligar_sip()
         await route(manager.end_match())
         if tunnel is not None:
             await tunnel.stop()
