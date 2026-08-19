@@ -189,6 +189,20 @@ class Game:
         while running:
             phone_events = [PhoneEvents() for _ in range(4)]
 
+            # Lido ANTES do ciclo de eventos, não a meio do desenho: o botão de
+            # modo precisa de saber o modo actual para pedir o contrário, e
+            # estando isto lá em baixo o primeiro frame morria com
+            # UnboundLocalError se alguém mexesse o rato e clicasse no canto
+            # antes de o desenho ter corrido uma vez.
+            #
+            # O modo (web/sip) vem do bridge na própria mensagem "slots" (ver
+            # udp_input.py); sem bridge a correr, "mode" nem existe e o convite
+            # web com QR é a degradação certa.
+            slots = udp_input.get_slots()
+            occupied = set(slots["occupied"]) if slots else set()
+            queue_len = slots["queue_len"] if slots else 0
+            mode = slots["mode"] if slots else "web"
+
             for event in pygame.event.get():
                 # Rato parado é rato escondido: o botão de ecrã inteiro e o
                 # cursor só aparecem enquanto alguém está mesmo a mexer, para
@@ -202,12 +216,20 @@ class Game:
                     if fullscreen_button.hit(onde):
                         self._toggle_fullscreen(ctx)
                         self.pointer_until = global_state.frame_time + POINTER_LINGER
-                    elif mode_button.hit(onde) and self.pointer_until > global_state.frame_time:
-                        # Só conta com o botão à vista. Sem esta condição, um
-                        # clique no canto superior direito trocava o modo de
-                        # entrada do evento sem nada desenhado ali — e a sala
-                        # ficava sem perceber porque é que os telemóveis
-                        # deixaram de responder.
+                    elif (
+                        mode_button.hit(onde)
+                        and self.pointer_until > global_state.frame_time
+                        and not self.a_preparar_antes
+                    ):
+                        # Duas condições, e as duas são a mesma pergunta: o
+                        # botão estava mesmo no ecrã quando isto foi clicado?
+                        # Sem a primeira, um clique no canto trocava o modo do
+                        # evento sem nada desenhado ali. Sem a segunda, o mesmo
+                        # acontecia por baixo do ecrã de espera, que tapa tudo
+                        # — e durante o arranque do túnel isso são até dois
+                        # minutos em que o canto está a aceitar cliques
+                        # invisíveis. `a_preparar_antes` é o que estava na
+                        # parede no último frame, que é o que a pessoa viu.
                         mode_button.pedir(mode_button.outro_modo(mode))
                         self.pointer_until = global_state.frame_time + POINTER_LINGER
 
@@ -280,15 +302,6 @@ class Game:
 
             for i in range(4):
                 display.blit(screens[i], self.positions[i])
-
-            # Quem está sem jogador e o que a fila vai dizendo. O modo
-            # (web/sip) vem do bridge na própria mensagem "slots" (ver
-            # udp_input.py); sem bridge a correr, "mode" nem existe e o
-            # convite web com QR é a degradação certa.
-            slots = udp_input.get_slots()
-            occupied = set(slots["occupied"]) if slots else set()
-            queue_len = slots["queue_len"] if slots else 0
-            mode = slots["mode"] if slots else "web"
 
             # O cartaz "Hugo / Revenge of the 90s / Liga-te já e joga"
             # (resources/images/logo.png) deixou de ser desenhado. É um véu

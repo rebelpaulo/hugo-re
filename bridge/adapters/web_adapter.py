@@ -175,8 +175,16 @@ class WebBridge:
                 continue
             try:
                 await ws.send_json({"type": "config", "input_mode": mode})
-            except ConnectionResetError:
-                LOGGER.debug("Sessão %s fechou antes do aviso de modo", source_id)
+            except Exception:
+                # Apanha-se tudo, e de propósito: só `ConnectionResetError`
+                # não chegava (um `send_json` num transporte a fechar levanta
+                # `RuntimeError`, por exemplo), e uma excepção que subisse
+                # daqui abortava a troca de modo a meio. Um telemóvel que não
+                # recebe o aviso é um telemóvel; o evento inteiro preso no
+                # modo errado é outra coisa.
+                LOGGER.debug(
+                    "Sessão %s não recebeu o aviso de modo", source_id, exc_info=True
+                )
 
     async def route(self, decisions: list[Decision]) -> None:
         """Encaminha cada Decision para a sessão certa.
@@ -254,6 +262,17 @@ class WebBridge:
             if ws is not None and not ws.closed:
                 await ws.send_json({"type": "pong"})
         elif mtype == "hello":
+            if self.input_mode == "sip":
+                # Num evento de telefones a webapp não ocupa quadrantes. A
+                # webapp honesta fecha a ligação sozinha ao receber o `config`,
+                # mas quem já tivesse a página aberta quando o modo mudou — e
+                # agora há mais gente nessa situação, porque o QR esteve no
+                # ecrã — entrava na mesma e roubava um lugar a um telefone.
+                LOGGER.info("Sessão %s pediu lugar em modo sip — recusado", source_id)
+                ws = self._sockets.get(source_id)
+                if ws is not None and not ws.closed:
+                    await ws.send_json({"type": "config", "input_mode": self.input_mode})
+                return
             await self.route(self.manager.connect(source_id, "web"))
         elif mtype == "press":
             event = KEY_TO_EVENT.get(str(data.get("key")))

@@ -50,7 +50,18 @@ class _ControlProtocol(asyncio.DatagramProtocol):
         # tarefa a meio e a mudança de modo perde-se sem deixar rasto.
         tarefa = asyncio.get_running_loop().create_task(self._aplicar(modo))
         self._tarefas.add(tarefa)
-        tarefa.add_done_callback(self._tarefas.discard)
+        tarefa.add_done_callback(self._terminou)
+
+    def _terminou(self, tarefa: asyncio.Task) -> None:
+        self._tarefas.discard(tarefa)
+        if tarefa.cancelled():
+            return
+        erro = tarefa.exception()
+        if erro is not None:
+            # Sem isto o asyncio limitava-se a escrever "Task exception was
+            # never retrieved" quando lhe apetecesse, e quem está a montar o
+            # evento não via nada — o botão simplesmente não fazia efeito.
+            LOGGER.error("A troca de modo falhou: %s", erro, exc_info=erro)
 
 
 async def start_control_listener(

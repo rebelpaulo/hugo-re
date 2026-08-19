@@ -154,9 +154,18 @@ class SipAdapter:
             backoff = min(backoff * 2, self.backoff_max)
 
     async def stop(self) -> None:
-        """Pára `run()` de forma limpa — chamado no desligar do bridge."""
+        """Pára `run()` de forma limpa — chamado no desligar do bridge.
+
+        Antes de largar o ESL, desliga as chamadas em curso. Sem isto os
+        telefones ficavam fora do gancho e mudos: quem estivesse ao telefone
+        quando a produção passa para os telemóveis não ouvia nada e não tinha
+        forma de perceber que a chamada já não conta. Com o `hupall` o
+        auscultador ganha o tom de ocupado, que toda a gente sabe ler.
+        """
         self._stop_event.set()
         if self._writer is not None:
+            with contextlib.suppress(Exception):
+                await _send(self._writer, "api hupall normal_clearing")
             self._writer.close()
             with contextlib.suppress(Exception):
                 await self._writer.wait_closed()

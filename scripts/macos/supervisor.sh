@@ -98,6 +98,16 @@ POLL_INTERVAL=0.2
 GAME_D1=0; GAME_D2=0; GAME_D3=0
 BRIDGE_D1=0; BRIDGE_D2=0; BRIDGE_D3=0
 SIP_D1=0; SIP_D2=0; SIP_D3=0
+# Enquanto isto for 1, um FreeSWITCH em baixo volta a ser tentado. A primeira
+# versão limpava o SIP_PID quando o arranque falhava e a vigia, que só olhava
+# para PIDs não vazios, nunca mais lhe tocava: uma falha passageira no
+# PRIMEIRO arranque desligava os telefones para o resto da noite, com o
+# contador de mortes por gastar.
+SIP_ACTIVO=1
+SIP_ULTIMA_TENTATIVA=0
+# Espaço mínimo entre tentativas. Sem ele, a vigia (que corre a cada 0,2s)
+# gastava as três mortes permitidas em menos de um segundo.
+SIP_INTERVALO=10
 
 GAME_PID=""
 BRIDGE_PID=""
@@ -165,18 +175,27 @@ start_bridge() {
 # REGRA, a mesma do túnel em bridge/tunnel.py: isto NUNCA pode impedir o evento
 # de arrancar. Sem FreeSWITCH instalado, ou se ele não subir, fica registado e
 # segue-se — o modo telemóveis, que é o normal, não depende disto para nada.
+FS_CLI="$(command -v fs_cli 2>/dev/null || true)"
+[[ -n "$FS_CLI" ]] || FS_CLI="/opt/homebrew/bin/fs_cli"
+
 start_sip() {
   log "== a arrancar o FreeSWITCH (telefones) =="
+  SIP_ULTIMA_TENTATIVA="$(date +%s)"
   "$SCRIPT_DIR/run-sip.sh" >>"$LOG_FILE" 2>&1 &
   SIP_PID=$!
+  # Pergunta-se ao próprio FreeSWITCH em vez de procurar uma frase no log.
+  # A primeira versão fazia `grep "== FreeSWITCH pronto ==" "$LOG_FILE"`, e o
+  # log é PARTILHADO e cresce: num reinício, a linha do arranque anterior
+  # ainda lá estava e o grep acertava logo na primeira volta — dávamos por
+  # pronto um FreeSWITCH que o run-sip.sh novo ainda nem tinha arrancado.
+  # Mentira do supervisor exactamente quando ele existe para não mentir.
   for _ in $(seq 1 60); do
     if ! kill -0 "$SIP_PID" 2>/dev/null; then
       SIP_PID=""
-      log "[aviso] o FreeSWITCH não arrancou (ver $LOG_FILE)."
-      log "[aviso] O evento segue em modo telemóveis; o botão de TELEFONES não vai funcionar."
+      log "[aviso] o FreeSWITCH não arrancou (ver $LOG_FILE); volto a tentar dentro de ${SIP_INTERVALO}s."
       return 0
     fi
-    if grep -q "== FreeSWITCH pronto ==" "$LOG_FILE" 2>/dev/null; then
+    if [[ -x "$FS_CLI" ]] && "$FS_CLI" -x "status" 2>/dev/null | grep -q "FreeSWITCH.*ready"; then
       log "[ok] FreeSWITCH pronto (PID $SIP_PID)."
       return 0
     fi
@@ -290,14 +309,17 @@ while true; do
 
   # O FreeSWITCH reinicia-se, mas nunca derruba o evento: esgotado o limite
   # ficam só os telemóveis, que é o modo normal.
-  if [[ -n "$SIP_PID" ]] && ! kill -0 "$SIP_PID" 2>/dev/null; then
-    log "[aviso] o FreeSWITCH morreu (PID $SIP_PID)."
-    SIP_PID=""
-    if registar_morte SIP "$AGORA"; then
-      start_sip
-    else
-      log "[aviso] o FreeSWITCH morreu $MAX_DEATHS vezes em menos de ${WINDOW_SECONDS}s — desisto dele."
-      log "[aviso] O evento continua em modo telemóveis; o botão de TELEFONES deixa de funcionar."
+  if [[ "$SIP_ACTIVO" -eq 1 ]] && { [[ -z "$SIP_PID" ]] || ! kill -0 "$SIP_PID" 2>/dev/null; }; then
+    if (( AGORA - SIP_ULTIMA_TENTATIVA >= SIP_INTERVALO )); then
+      [[ -n "$SIP_PID" ]] && log "[aviso] o FreeSWITCH morreu (PID $SIP_PID)."
+      SIP_PID=""
+      if registar_morte SIP "$AGORA"; then
+        start_sip
+      else
+        SIP_ACTIVO=0
+        log "[aviso] o FreeSWITCH morreu $MAX_DEATHS vezes em menos de ${WINDOW_SECONDS}s — desisto dele."
+        log "[aviso] O evento continua em modo telemóveis; o botão de TELEFONES deixa de funcionar."
+      fi
     fi
   fi
 

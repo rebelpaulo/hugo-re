@@ -19,6 +19,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -29,6 +30,50 @@ VENV_PY = REPO / ".venv" / "bin" / "python3"
 PORTA_JOGO = 9190       # portas próprias, para nunca colidir com um bridge a sério
 PORTA_WEB = 8190
 PORTA_CONTROLO = 9191
+PORTA_ESL = 8921
+
+
+class EslDeMentira:
+    """Aceita ligações na porta do ESL e conta-as. Não fala protocolo nenhum.
+
+    Serve para o teste ver uma coisa que de fora não se vê: se o adaptador SIP
+    está ligado ou não. A mensagem `slots` diz o modo, mas o modo é só um
+    carimbo — o defeito que interessa é o adaptador ficar para trás. Como o
+    adaptador religa com backoff (1s, 2s, 4s...) enquanto o modo for sip,
+    contar ligações distingue "a correr" de "parado" sem falar ESL.
+    """
+
+    def __init__(self, porta=PORTA_ESL):
+        self.porta = porta
+        self.ligacoes = 0
+        self._sock = None
+        self._fio = None
+        self._a_correr = True
+
+    def __enter__(self):
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("127.0.0.1", self.porta))
+        self._sock.listen(8)
+        self._sock.settimeout(0.5)
+        self._fio = threading.Thread(target=self._aceitar, daemon=True)
+        self._fio.start()
+        return self
+
+    def _aceitar(self):
+        while self._a_correr:
+            try:
+                cliente, _ = self._sock.accept()
+            except (socket.timeout, OSError):
+                continue
+            self.ligacoes += 1
+            cliente.close()
+
+    def __exit__(self, *_):
+        self._a_correr = False
+        if self._sock is not None:
+            self._sock.close()
+        return False
 
 CONFIG = f"""
 input_mode: web
@@ -51,7 +96,7 @@ bridge:
   sip_preempt: false
 sip:
   esl_host: 127.0.0.1
-  esl_port: 8921
+  esl_port: {PORTA_ESL}
   esl_password: ClueCon
   context: hugo-lan
 """
@@ -115,6 +160,7 @@ def main() -> int:
 
     jogo = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     jogo.bind(("127.0.0.1", PORTA_JOGO))
+    esl = EslDeMentira().__enter__()
 
     with tempfile.TemporaryDirectory() as pasta:
         config = Path(pasta) / "config.yaml"
@@ -160,6 +206,52 @@ def main() -> int:
                 raise AssertionError("o bridge deixou de responder depois do lixo")
             print("OK 5: lixo no canal de controlo é ignorado e o bridge sobrevive")
 
+            # O adaptador SIP acompanha mesmo o modo? A mensagem `slots` só
+            # prova o carimbo. Já estamos em sip desde o cenário anterior.
+            fim = time.monotonic() + 12
+            while esl.ligacoes == 0 and time.monotonic() < fim:
+                time.sleep(0.3)
+            assert esl.ligacoes > 0, "em modo sip o adaptador devia estar a ligar-se ao ESL"
+            print(f"OK 6: em sip o adaptador liga-se ao ESL ({esl.ligacoes} tentativas)")
+
+            pedir("web")
+            assert esperar_modo(jogo, "web"), "não voltou a web"
+            time.sleep(1.0)      # deixa morrer o que estivesse a meio
+            antes = esl.ligacoes
+            time.sleep(5.0)      # mais do que o backoff inicial (1s, 2s, 4s)
+            assert esl.ligacoes == antes, (
+                f"em modo web o adaptador continuou a ligar-se ao ESL "
+                f"({esl.ligacoes - antes} tentativas novas) — ficou para trás"
+            )
+            print("OK 7: em web o adaptador larga o ESL e não volta")
+
+            # Dois pedidos ao mesmo tempo. A ordem importa e não é simétrica:
+            # sair de sip espera pela paragem do adaptador, e é ESSA espera que
+            # abre a janela. Um pedido de sip que chegue lá dentro compara-se
+            # com um `modo_actual` que ainda diz sip, conclui que não há nada a
+            # fazer, e sai — enquanto o primeiro segue e deixa tudo em web. O
+            # operador carregou por último em TELEFONES e ficou com telemóveis.
+            #
+            # A primeira versão deste cenário mandava web→sip a partir de web e
+            # passava sem cadeado nenhum: sem ninguém ligado, entrar em sip não
+            # tem ponto de suspensão e as duas tarefas nunca se cruzavam. O
+            # teste dava a corrida por coberta sem lhe chegar perto.
+            pedir("sip")
+            assert esperar_modo(jogo, "sip", limite=20), "não entrou em sip"
+            pedir("web")
+            pedir("sip")
+            assert esperar_modo(jogo, "sip", limite=20), (
+                "o último pedido foi sip e o bridge ficou noutro modo"
+            )
+            time.sleep(1.5)
+            antes = esl.ligacoes
+            time.sleep(5.0)
+            assert esl.ligacoes > antes, (
+                "o modo final é sip mas o adaptador não está a ligar-se ao ESL "
+                "— ficou para trás na troca"
+            )
+            print("OK 8: dois pedidos ao mesmo tempo — ganha o último, e o adaptador segue-o")
+
             assert bridge.poll() is None, "o bridge morreu durante o teste"
         finally:
             # O bridge escreve o QR no sítio real (o caminho é fixo em
@@ -172,6 +264,7 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 bridge.kill()
             jogo.close()
+            esl.__exit__(None, None, None)
 
     print("Todos os cenários passaram.")
     return 0

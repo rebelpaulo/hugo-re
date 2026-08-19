@@ -249,36 +249,66 @@ async def run(config_path: Path) -> None:
         nonlocal sip_adapter, sip_task
         if sip_adapter is None:
             return
-        await sip_adapter.stop()
-        if sip_task is not None:
-            await asyncio.gather(sip_task, return_exceptions=True)
+        adaptador, tarefa = sip_adapter, sip_task
         sip_adapter = None
         sip_task = None
+        await adaptador.stop()
+        if tarefa is not None:
+            # `stop()` fecha o writer, mas se o `run()` estiver preso a abrir a
+            # ligação ao ESL ainda não há writer nenhum para fechar — e o
+            # esperar por ele ficava à mercê do TCP desistir sozinho. Com o
+            # FreeSWITCH em loopback isso é imediato; com o ESL a meio do
+            # handshake, não é, e ficava presa a troca de modo E o
+            # encerramento do bridge.
+            try:
+                await asyncio.wait_for(tarefa, timeout=5)
+            except asyncio.TimeoutError:
+                LOGGER.warning("O adaptador SIP não parou em 5s — cancelado.")
+                tarefa.cancel()
+                await asyncio.gather(tarefa, return_exceptions=True)
+            except Exception:
+                LOGGER.debug("O adaptador SIP terminou com erro", exc_info=True)
+
+    # Serializa as trocas de modo. Sem isto, dois pedidos ao mesmo tempo
+    # entrelaçavam-se e deixavam o sistema partido de duas maneiras medidas:
+    # em modo web com o adaptador SIP a correr (telefones e telemóveis ao
+    # mesmo tempo), ou em modo sip sem adaptador nenhum (o botão a dizer
+    # TELEFONES com o ESL morto).
+    troca_de_modo = asyncio.Lock()
 
     async def mudar_modo(novo: str) -> None:
         nonlocal modo_actual
         if novo not in VALID_INPUT_MODES:
             LOGGER.warning("Pedido de modo inválido (%r) — ignorado", novo)
             return
-        if novo == modo_actual:
-            return
-        # Quem está a jogar sai. O input com que entrou deixou de contar, e
-        # deixá-lo com um teclado que já não faz nada é pior do que tirá-lo:
-        # pelo menos assim o telemóvel diz-lhe o que se passa.
-        await route(manager.end_match())
-        modo_actual = novo
-        emitter.set_mode(novo)
-        await web_bridge.set_input_mode(novo)
-        if novo == "sip":
-            await ligar_sip()
-        else:
-            await desligar_sip()
-        # O jogo aprende o modo pela mensagem `slots`. Forçar uma agora evita
-        # que o ecrã grande fique até um tick inteiro a anunciar o modo
-        # antigo — e é justamente nesse segundo que alguém está a olhar para
-        # ele à espera de ver se o botão funcionou.
-        emitter.send_slots(manager.occupied, manager.queue_len)
-        print(f"  MODO:   {novo}", flush=True)
+        async with troca_de_modo:
+            # A comparação vive DENTRO do cadeado de propósito: cá fora, dois
+            # pedidos seguidos comparavam-se ambos contra o valor antigo, e o
+            # segundo saía sem fazer nada — o operador pedia web e ficava sip.
+            if novo == modo_actual:
+                return
+            # Quem está a jogar sai. O input com que entrou deixou de contar, e
+            # deixá-lo com um teclado que já não faz nada é pior do que tirá-lo:
+            # pelo menos assim o telemóvel diz-lhe o que se passa.
+            await route(manager.end_match())
+            if novo == "sip":
+                await ligar_sip()
+            else:
+                await desligar_sip()
+            # `modo_actual` só muda depois de os efeitos estarem feitos. Com
+            # ele actualizado no início, uma excepção a meio deixava o bridge a
+            # afirmar o modo novo sem nada disto feito — e o clique seguinte,
+            # a pedir o mesmo alvo, era ignorado pela comparação acima. O botão
+            # ficava morto até alguém reiniciar o bridge.
+            emitter.set_mode(novo)
+            modo_actual = novo
+            await web_bridge.set_input_mode(novo)
+            # O jogo aprende o modo pela mensagem `slots`. Forçar uma agora
+            # evita que o ecrã grande fique até um tick inteiro a anunciar o
+            # modo antigo — e é justamente nesse segundo que alguém está a
+            # olhar para ele à espera de ver se o botão funcionou.
+            emitter.send_slots(manager.occupied, manager.queue_len)
+            print(f"  MODO:   {novo}", flush=True)
 
     if modo_actual == "sip":
         await ligar_sip()
