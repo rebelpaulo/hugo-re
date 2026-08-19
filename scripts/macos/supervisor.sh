@@ -209,18 +209,18 @@ start_sip() {
 # SIGTERM simples (sem handler próprio, mas o loop só verifica sinais
 # pendentes entre frames) — não é fiável esperar que morra logo a seguir.
 matar_com_escalada() {
-  local pid="$1" nome="$2"
+  local pid="$1" nome="$2" espera="${3:-5}"
   kill -0 "$pid" 2>/dev/null || return 0
   kill "$pid" 2>/dev/null || true
-  for _ in $(seq 1 17); do
+  for _ in $(seq 1 $(( espera * 2 ))); do
     if ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid" 2>/dev/null || true
       log "[ok] $nome parou."
       return 0
     fi
-    sleep 0.3
+    sleep 0.5
   done
-  log "[aviso] $nome não reagiu a SIGTERM em 5s; a forçar com SIGKILL."
+  log "[aviso] $nome não reagiu a SIGTERM em ${espera}s; a forçar com SIGKILL."
   kill -9 "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   if kill -0 "$pid" 2>/dev/null; then
@@ -237,8 +237,12 @@ parar_tudo() {
   [[ -n "$GAME_PID" ]] && matar_com_escalada "$GAME_PID" "o jogo"
   [[ -n "$BRIDGE_PID" ]] && matar_com_escalada "$BRIDGE_PID" "o bridge"
   # O run-sip.sh tem trap própria: ao receber o sinal desliga o FreeSWITCH
-  # antes de sair, portanto basta matar o lançador.
-  [[ -n "$SIP_PID" ]] && matar_com_escalada "$SIP_PID" "o FreeSWITCH"
+  # antes de sair, portanto basta matar o lançador. Mas o shutdown limpo do
+  # FreeSWITCH pode levar 10s, e os 5s por omissão davam SIGKILL ao lançador
+  # antes disso — e SIGKILL não corre trap nenhuma, portanto o FreeSWITCH
+  # ficava vivo a segurar a 5060 depois de o evento acabar. Medido: num
+  # encerramento real a escalada disparou com o shutdown já a 100%, à tangente.
+  [[ -n "$SIP_PID" ]] && matar_com_escalada "$SIP_PID" "o FreeSWITCH" 15
   stop_audio_pa
   log "== supervisor parado. Log completo em: $LOG_FILE =="
 }
