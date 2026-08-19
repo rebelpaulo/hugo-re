@@ -142,6 +142,14 @@ class Game:
         phone_icons_active = [pygame.image.load("resources/images/phone" + str(phone_index) + "_small_active.png").convert_alpha() for phone_index in range(4)]
         screens = [pygame.Surface((320, 240)) for _ in range(4)]
 
+        # As duas marcas que cercam o carregamento existem para o teste poder
+        # exigir ORDEM em vez de um número de segundos: o ecrã de espera tem de
+        # estar pintado antes desta e continuar a ser o que lá está depois
+        # daquela. A primeira versão do teste media "a primeira pintura em
+        # menos de 12s", o que só funcionava porque o carregamento leva 27s
+        # NESTA máquina — noutra mais rápida, pintar depois do carregamento
+        # também caberia nos 12s e o teste passava com o defeito de volta.
+        print("[arranque] a carregar recursos", flush=True)
         CaveResources.init()
         pintar_espera()
         ForestResources.init()
@@ -152,6 +160,14 @@ class Game:
         pintar_espera()
         Splat.init()
         pintar_espera()
+        print("[arranque] recursos carregados", flush=True)
+
+        # ponytail: o repintar só acontece ENTRE blocos, e o `ForestResources`
+        # e o `TvShowResources` (24 vídeos) são os dois maiores — lá dentro
+        # continuam a ser chamadas que bloqueiam sem dar sinal de vida ao
+        # sistema. Se o macOS voltar a escurecer a janela a meio do arranque, é
+        # aí que se mexe, e a correcção não é neste ficheiro: é fazer esses
+        # módulos carregarem por passos.
 
         # O áudio é separado por jogador para chegar ao respetivo telemóvel
         # (webapp) ou auscultador (SIP), cada um através da sua própria porta.
@@ -164,6 +180,10 @@ class Game:
 
         clock = pygame.time.Clock()
         udp_input = UdpInput()
+        # Última pintura antes do ciclo: construir os quatro TvShowParent e
+        # abrir o socket também leva tempo, e sem isto era o último bocado do
+        # arranque a passar sem ninguém dizer ao sistema que a janela está viva.
+        pintar_espera()
 
         running = True
         while running:
