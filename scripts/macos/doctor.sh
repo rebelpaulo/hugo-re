@@ -196,7 +196,33 @@ else
 fi
 echo
 
-# -- 10. IP do lobby ------------------------------------------------------------
+# -- 10. telefones (SIP) --------------------------------------------------------
+echo "-- telefones (SIP) --"
+# Nunca [FALHA]: um evento só com telemóveis não precisa disto para nada, e
+# bloquear o arranque por causa dos telefones seria trocar um problema por um
+# pior. Mas tem de ser VISÍVEL — sem FreeSWITCH, o botão TELEFONES no ecrã
+# grande não faz nada, e isso descobre-se muito mal com a sala cheia.
+FS_BIN="$(command -v freeswitch 2>/dev/null || true)"
+if [ -z "$FS_BIN" ]; then
+  aviso "freeswitch não está instalado (brew install freeswitch)"
+  aviso "  → só telemóveis; o botão TELEFONES no ecrã grande não vai funcionar"
+else
+  ok "freeswitch instalado ($FS_BIN)"
+  FS_PID="$(pgrep -f '[f]reeswitch' | head -1 || true)"
+  if [ -n "$FS_PID" ]; then
+    ok "FreeSWITCH vivo (PID $FS_PID) — o botão TELEFONES está pronto"
+    if command -v fs_cli >/dev/null 2>&1; then
+      SOFIA="$(fs_cli -x 'sofia status' 2>/dev/null | awk '/internal[^-]/ {print $3}' | head -1)"
+      [ -n "$SOFIA" ] && info "perfil internal em $SOFIA — é para aqui que os telefones marcam"
+    fi
+  else
+    info "FreeSWITCH ainda não está a correr (arranca com o Hugo.command)"
+  fi
+fi
+verificar_porta UDP 9111 "bridge (canal de controlo do botão de modo)"
+echo
+
+# -- 11. IP do lobby ------------------------------------------------------------
 echo "-- IP do lobby --"
 if [ -x "$VENV_PY" ]; then
   LOBBY_IP="$("$VENV_PY" - <<'PY' 2>/dev/null

@@ -22,6 +22,7 @@ from tv_show.tv_show_resources import TvShowResources
 from tween import Tween
 from udp_input import UdpInput
 import fullscreen_button
+import mode_button
 import global_state
 import invite_overlay
 
@@ -177,8 +178,17 @@ class Game:
                     pygame.mouse.set_visible(True)
 
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if fullscreen_button.hit(self._surface_pos(event.pos)):
+                    onde = self._surface_pos(event.pos)
+                    if fullscreen_button.hit(onde):
                         self._toggle_fullscreen(ctx)
+                        self.pointer_until = global_state.frame_time + POINTER_LINGER
+                    elif mode_button.hit(onde) and self.pointer_until > global_state.frame_time:
+                        # Só conta com o botão à vista. Sem esta condição, um
+                        # clique no canto superior direito trocava o modo de
+                        # entrada do evento sem nada desenhado ali — e a sala
+                        # ficava sem perceber porque é que os telemóveis
+                        # deixaram de responder.
+                        mode_button.pedir(mode_button.outro_modo(mode))
                         self.pointer_until = global_state.frame_time + POINTER_LINGER
 
                 # Só `QUIT` fecha o jogo — ou seja, Cmd+Q e fechar a janela.
@@ -290,6 +300,7 @@ class Game:
 
             if global_state.frame_time < self.pointer_until:
                 fullscreen_button.draw(display, self.fullscreen)
+                mode_button.draw(display, mode)
             elif pygame.mouse.get_visible():
                 pygame.mouse.set_visible(False)
 

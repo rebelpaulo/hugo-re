@@ -159,6 +159,25 @@ class WebBridge:
         # `release_player`/`_release_active` em slot_manager.py).
         self._finished_players: dict[str, int] = {}
 
+    async def set_input_mode(self, mode: str) -> None:
+        """Muda o modo de entrada e avisa quem já está ligado.
+
+        Sem o aviso, um telemóvel com o teclado aberto no momento em que a
+        produção passa para os telefones ficava a carregar em teclas que já
+        não contam, sem nada no ecrã a explicar porquê. A webapp já sabe
+        reagir a `config` — é a mesma mensagem que recebe ao ligar-se.
+        """
+        if mode not in VALID_INPUT_MODES or mode == self.input_mode:
+            return
+        self.input_mode = mode
+        for source_id, ws in list(self._sockets.items()):
+            if ws.closed:
+                continue
+            try:
+                await ws.send_json({"type": "config", "input_mode": mode})
+            except ConnectionResetError:
+                LOGGER.debug("Sessão %s fechou antes do aviso de modo", source_id)
+
     async def route(self, decisions: list[Decision]) -> None:
         """Encaminha cada Decision para a sessão certa.
 
@@ -564,6 +583,10 @@ def create_app(
         score_store=score_store,
     )
     app = web.Application()
+    # Guardado para quem precise de mexer no modo com o bridge a andar
+    # (bridge/main.py, canal de controlo) — o `route` devolvido é um método
+    # ligado e chegar ao objecto por ele seria adivinhar.
+    app["web_bridge"] = bridge
 
     if score_store is not None:
         app["score_store"] = score_store

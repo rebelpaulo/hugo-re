@@ -11,7 +11,20 @@
 #
 # Valor ausente ou inválido (incluindo o antigo "both", que deixou de
 # existir) cai em "web" e fica registado no log — nunca derruba o arranque.
+#
+# DESDE O BOTÃO NO ECRÃ: isto é só o valor de ARRANQUE. O operador troca de
+# modo no ecrã grande, com o evento a decorrer, sem reiniciar nada (ver
+# game/mode_button.py e bridge/control.py). Trocar no ecrã não reescreve este
+# ficheiro — no arranque seguinte volta a valer o que estiver aqui.
 input_mode: web   # web | sip
+
+# Canal por onde o botão do ecrã grande manda a troca de modo. Loopback e nada
+# mais: o servidor web escuta em 0.0.0.0 e, com o túnel levantado, uma rota
+# HTTP para isto seria um interruptor do evento ao alcance de quem lesse o QR.
+# O bridge recusa-se a arrancar se apontares isto para fora do loopback.
+control:
+  host: 127.0.0.1
+  port: 9111
 
 # Endereço UDP onde o jogo escuta. Manter em loopback na activação local.
 game:
