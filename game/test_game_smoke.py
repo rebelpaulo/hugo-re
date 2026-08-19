@@ -145,6 +145,36 @@ def esperar_por_ecra(processo, registo, limite, esperado=None):
     return False
 
 
+def esperar_por_marca(processo, registo, marca, limite):
+    """Espera que uma linha exacta apareça no log do jogo."""
+    inicio = time.monotonic()
+    while time.monotonic() - inicio < limite:
+        if marca in registo.read_text(errors="replace"):
+            return True
+        if not vivo(processo):
+            return False
+        time.sleep(0.5)
+    return False
+
+
+def ordem_das_marcas(registo):
+    """Ordem em que as três marcas do arranque apareceram, sem repetições.
+
+    Compara-se ordem e não relógio de propósito — ver a explicação no `main`.
+    """
+    interessa = (
+        "[ecrã] a mostrar: espera (a carregar recursos)",
+        "[arranque] a carregar recursos",
+        "[arranque] recursos carregados",
+    )
+    vistas = []
+    for linha in registo.read_text(errors="replace").splitlines():
+        linha = linha.strip()
+        if linha in interessa and linha not in vistas:
+            vistas.append(linha)
+    return vistas
+
+
 def falhar(processo, fase, registo):
     saida = registo.read_text(errors="replace")[-2000:]
     print(f"FALHOU em: {fase}\n--- últimas linhas ---\n{saida}")
@@ -165,7 +195,6 @@ def main() -> int:
     QR.unlink(missing_ok=True)  # começa como um arranque de evento: sem QR
 
     audio = RespondedorDeAudio().__enter__()
-    lancado = time.monotonic()
     with registo.open("w") as saida:
         jogo = subprocess.Popen(
             [str(VENV_PY), "-u", "game.py", ASSETS],
@@ -188,7 +217,6 @@ def main() -> int:
         # começavam a olhar a partir do ciclo de render.
         if not esperar_por_ecra(jogo, registo, limite=45):
             falhar(jogo, "o jogo não pintou nada em 45s", registo)
-        ao_fim_de = time.monotonic() - lancado
         estado = ecra_actual(registo)
         if estado != "espera (a carregar recursos)":
             falhar(
@@ -197,19 +225,29 @@ def main() -> int:
                 "— o carregamento voltou a passar à frente dele",
                 registo,
             )
-        # Não chega ser o primeiro: tem de ser CEDO. Medido nesta máquina, o
-        # ecrã de espera aparece a 1,6s e o ciclo de render a 32,8s. Se alguém
-        # empurrar a pintura para depois do carregamento, ela passa a aparecer
-        # perto dos 32s — e continuaria a ser a primeira marca, portanto a
-        # ordem sozinha não apanhava a regressão.
-        if ao_fim_de > 12:
+        # Ser o primeiro não chega, e um tecto em segundos também não: a
+        # primeira versão disto exigia "pintado em menos de 12s", o que só
+        # apanhava a regressão porque o carregamento leva ~27s NESTA máquina.
+        # Numa mais rápida, ou com a BigFile em cache quente, pintar DEPOIS do
+        # carregamento também cabia nos 12s — e o teste dava verde com o
+        # defeito de volta. Exige-se agora ordem contra as marcas que o próprio
+        # carregamento emite, o que não depende da velocidade de nada.
+        if not esperar_por_marca(jogo, registo, "[arranque] recursos carregados", limite=90):
+            falhar(jogo, "o carregamento dos recursos não acabou em 90s", registo)
+        ordem = ordem_das_marcas(registo)
+        esperada = [
+            "[ecrã] a mostrar: espera (a carregar recursos)",
+            "[arranque] a carregar recursos",
+            "[arranque] recursos carregados",
+        ]
+        if ordem != esperada:
             falhar(
                 jogo,
-                f"o ecrã de espera só apareceu ao fim de {ao_fim_de:.1f}s — devia estar "
-                "no ecrã em poucos segundos, senão não cobre o carregamento",
+                "o ecrã de espera tem de estar pintado ANTES de o carregamento começar.\n"
+                f"  esperado: {esperada}\n  obtido:   {ordem}",
                 registo,
             )
-        print(f"OK 1: ecrã de espera pintado a {ao_fim_de:.1f}s, antes de carregar os recursos")
+        print("OK 1: o ecrã de espera é pintado antes de o carregamento começar")
 
         if not esperar_por_ecra(jogo, registo, limite=90, esperado="espera (sem QR)"):
             falhar(jogo, "o jogo não chegou ao ciclo de render em 90s", registo)
