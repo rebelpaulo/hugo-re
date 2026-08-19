@@ -72,8 +72,8 @@
          calcula a partir da sub-rede local (ver switch_core.c no arranque:
          "Adding 192.168.1.198/255.255.255.0 ... to list localnet.auto") —
          é a fronteira real que queremos: dentro da LAN do evento, entra. -->
-    <param name="apply-inbound-acl" value="localnet.auto"/>
-    <param name="local-network-acl" value="localnet.auto"/>
+    <param name="apply-inbound-acl" value="hugo-lan"/>
+    <param name="local-network-acl" value="hugo-lan"/>
     <param name="record-path" value="$${recordings_dir}"/>
     <param name="record-template" value="${caller_id_number}.${target_domain}.${strftime(%Y-%m-%d-%H-%M-%S)}.wav"/>
     <param name="manage-presence" value="true"/>
